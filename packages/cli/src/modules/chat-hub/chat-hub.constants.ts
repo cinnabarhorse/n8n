@@ -75,13 +75,22 @@ export const PROVIDER_NODE_TYPE_MAP: Record<ChatHubLLMProvider, INodeTypeNameVer
 
 export const NODE_NAMES = {
 	CHAT_TRIGGER: 'When chat message received',
+	KEEP_DOCUMENTS: 'Keep documents',
+	REMOVE_DOCUMENTS: 'Remove documents',
+	VECTOR_STORE_WRITE: 'Vector store (write)',
+	VECTOR_STORE_READ: 'Vector store (read)',
+	DATA_LOADER: 'Data loader',
+	TOKEN_SPLITTER: 'Token splitter',
+	EMBEDDINGS_MODEL: 'Embeddings',
 	REPLY_AGENT: 'AI Agent',
 	TITLE_GENERATOR_AGENT: 'Title Generator Agent',
 	CHAT_MODEL: 'Chat Model',
 	MEMORY: 'Memory',
 	RESTORE_CHAT_MEMORY: 'Restore Chat Memory',
 	CLEAR_CHAT_MEMORY: 'Clear Chat Memory',
+	VECTOR_STORE_TOOL: 'Vector store tool',
 	MERGE: 'Merge',
+	LIMIT: 'Limit',
 } as const;
 
 /* eslint-disable @typescript-eslint/naming-convention */

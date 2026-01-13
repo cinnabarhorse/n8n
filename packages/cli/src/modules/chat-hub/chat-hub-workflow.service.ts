@@ -186,8 +186,11 @@ export class ChatHubWorkflowService {
 		sessionId: string,
 		message: string,
 		attachments: IBinaryData[],
+		docsInHistory: IBinaryData[],
 	): IExecuteData[] {
-		// Attachments are already processed (id field populated) by the caller
+		const documents = attachments.filter((attachment) => attachment.mimeType === 'application/pdf');
+		const allAttachments = docsInHistory.concat(attachments);
+
 		return [
 			{
 				node: triggerNode,
@@ -198,11 +201,17 @@ export class ChatHubWorkflowService {
 								json: {
 									sessionId,
 									action: 'sendMessage',
-									chatInput: message,
-									files: attachments.map(({ data, ...metadata }) => metadata),
+									chatInput: [
+										...documents.map(
+											(doc) =>
+												`[File: ${doc.fileName ?? ''}] Use Vector Store Tool to query contents`,
+										),
+										message,
+									].join('\n\n'),
+									files: allAttachments.map(({ data, ...metadata }) => metadata),
 								},
 								binary: Object.fromEntries(
-									attachments.map((attachment, index) => [`data${index}`, attachment]),
+									allAttachments.map((attachment, index) => [`data${index}`, attachment]),
 								),
 							},
 						],
@@ -279,6 +288,9 @@ export class ChatHubWorkflowService {
 		systemMessage: string;
 		tools: INode[];
 	}) {
+		// Namespace is instance-wide, all users can access if they know key
+		const secretInMemoryVectorStoreKey = uuidv4();
+
 		const chatTriggerNode = this.buildChatTriggerNode();
 		const toolsAgentNode = this.buildToolsAgentNode(model, systemMessage);
 		const modelNode = this.buildModelNode(credentials, model);
@@ -295,6 +307,122 @@ export class ChatHubWorkflowService {
 			restoreMemoryNode,
 			clearMemoryNode,
 			mergeNode,
+			{
+				parameters: {
+					jsCode: `for (const item of $input.all()) {
+    for (const key of Object.keys(item.binary)) {
+	    if (item.binary[key].mimeType === 'application/pdf') {
+		    delete item.binary[key];
+		}
+	}
+}
+	
+return $input.all();
+`,
+				},
+				type: 'n8n-nodes-base.code',
+				typeVersion: 2,
+				position: [-576, 96],
+				id: uuidv4(),
+				name: NODE_NAMES.REMOVE_DOCUMENTS,
+			},
+			{
+				parameters: {
+					jsCode: `for (const item of $input.all()) {
+    for (const key of Object.keys(item.binary)) {
+	    if (item.binary[key].mimeType !== 'application/pdf') {
+		    delete item.binary[key];
+		}
+	}
+}
+	
+return $input.all();
+`,
+				},
+				type: 'n8n-nodes-base.code',
+				typeVersion: 2,
+				position: [-576, 384],
+				id: uuidv4(),
+				name: NODE_NAMES.KEEP_DOCUMENTS,
+			},
+			{
+				parameters: {
+					mode: 'insert',
+					memoryKey: secretInMemoryVectorStoreKey,
+				},
+				id: uuidv4(),
+				name: NODE_NAMES.VECTOR_STORE_WRITE,
+				type: '@n8n/n8n-nodes-langchain.vectorStoreInMemory',
+				typeVersion: 1,
+				position: [-368, 384],
+			},
+			{
+				parameters: {
+					dataType: 'binary',
+					options: {},
+				},
+				id: uuidv4(),
+				name: NODE_NAMES.DATA_LOADER,
+				type: '@n8n/n8n-nodes-langchain.documentDefaultDataLoader',
+				typeVersion: 1,
+				position: [-272, 672],
+			},
+			{
+				parameters: {
+					chunkSize: 3000,
+				},
+				id: uuidv4(),
+				name: NODE_NAMES.TOKEN_SPLITTER,
+				type: '@n8n/n8n-nodes-langchain.textSplitterTokenSplitter',
+				typeVersion: 1,
+				position: [-272, 832],
+			},
+			{
+				parameters: {
+					options: {},
+				},
+				type: '@n8n/n8n-nodes-langchain.embeddingsOpenAi', // TODO
+				typeVersion: 1.2,
+				position: [-368, 1024],
+				id: uuidv4(),
+				name: NODE_NAMES.EMBEDDINGS_MODEL,
+				credentials: {
+					openAiApi: {
+						id: 'aZCclrndUB6H1A7E', // TODO
+						name: 'OpenAi account',
+					},
+				},
+			},
+			{
+				parameters: {},
+				type: 'n8n-nodes-base.limit',
+				typeVersion: 1,
+				position: [560, 128],
+				id: uuidv4(),
+				name: 'Limit',
+			},
+			{
+				parameters: {
+					name: 'fetch_attachment_content',
+					description: 'To access the content of attachment documents use this tool',
+					topK: 2,
+				},
+				type: '@n8n/n8n-nodes-langchain.toolVectorStore',
+				typeVersion: 1,
+				position: [1040, 464],
+				id: uuidv4(),
+				name: NODE_NAMES.VECTOR_STORE_TOOL,
+			},
+			{
+				parameters: {
+					memoryKey: secretInMemoryVectorStoreKey,
+				},
+				type: '@n8n/n8n-nodes-langchain.vectorStoreInMemory',
+				typeVersion: 1,
+				position: [960, 720],
+				id: uuidv4(),
+				name: NODE_NAMES.VECTOR_STORE_READ,
+			},
 		];
 
 		const nodeNames = new Set(nodes.map((node) => node.name));
@@ -321,24 +449,85 @@ export class ChatHubWorkflowService {
 			[NODE_NAMES.CHAT_TRIGGER]: {
 				[NodeConnectionTypes.Main]: [
 					[
+						{ node: NODE_NAMES.KEEP_DOCUMENTS, type: NodeConnectionTypes.Main, index: 0 },
+						{ node: NODE_NAMES.REMOVE_DOCUMENTS, type: NodeConnectionTypes.Main, index: 0 },
 						{ node: NODE_NAMES.RESTORE_CHAT_MEMORY, type: NodeConnectionTypes.Main, index: 0 },
-						{ node: NODE_NAMES.MERGE, type: NodeConnectionTypes.Main, index: 0 },
 					],
 				],
 			},
-			[NODE_NAMES.RESTORE_CHAT_MEMORY]: {
+			[NODE_NAMES.REMOVE_DOCUMENTS]: {
+				[NodeConnectionTypes.Main]: [
+					[{ node: NODE_NAMES.MERGE, type: NodeConnectionTypes.Main, index: 0 }],
+				],
+			},
+			[NODE_NAMES.KEEP_DOCUMENTS]: {
+				[NodeConnectionTypes.Main]: [
+					[{ node: NODE_NAMES.VECTOR_STORE_WRITE, type: NodeConnectionTypes.Main, index: 0 }],
+				],
+			},
+			[NODE_NAMES.VECTOR_STORE_WRITE]: {
 				[NodeConnectionTypes.Main]: [
 					[{ node: NODE_NAMES.MERGE, type: NodeConnectionTypes.Main, index: 1 }],
 				],
 			},
+			[NODE_NAMES.RESTORE_CHAT_MEMORY]: {
+				[NodeConnectionTypes.Main]: [
+					[{ node: NODE_NAMES.MERGE, type: NodeConnectionTypes.Main, index: 2 }],
+				],
+			},
 			[NODE_NAMES.MERGE]: {
+				[NodeConnectionTypes.Main]: [
+					[{ node: NODE_NAMES.LIMIT, type: NodeConnectionTypes.Main, index: 0 }],
+				],
+			},
+			[NODE_NAMES.LIMIT]: {
 				[NodeConnectionTypes.Main]: [
 					[{ node: NODE_NAMES.REPLY_AGENT, type: NodeConnectionTypes.Main, index: 0 }],
 				],
 			},
 			[NODE_NAMES.CHAT_MODEL]: {
 				[NodeConnectionTypes.AiLanguageModel]: [
-					[{ node: NODE_NAMES.REPLY_AGENT, type: NodeConnectionTypes.AiLanguageModel, index: 0 }],
+					[
+						{ node: NODE_NAMES.REPLY_AGENT, type: NodeConnectionTypes.AiLanguageModel, index: 0 },
+						{
+							node: NODE_NAMES.VECTOR_STORE_TOOL,
+							type: NodeConnectionTypes.AiLanguageModel,
+							index: 0,
+						},
+					],
+				],
+			},
+			[NODE_NAMES.EMBEDDINGS_MODEL]: {
+				[NodeConnectionTypes.AiEmbedding]: [
+					[
+						{ node: NODE_NAMES.VECTOR_STORE_READ, type: NodeConnectionTypes.AiEmbedding, index: 0 },
+						{
+							node: NODE_NAMES.VECTOR_STORE_WRITE,
+							type: NodeConnectionTypes.AiEmbedding,
+							index: 0,
+						},
+					],
+				],
+			},
+			[NODE_NAMES.VECTOR_STORE_READ]: {
+				[NodeConnectionTypes.AiVectorStore]: [
+					[
+						{
+							node: NODE_NAMES.VECTOR_STORE_TOOL,
+							type: NodeConnectionTypes.AiVectorStore,
+							index: 0,
+						},
+					],
+				],
+			},
+			[NODE_NAMES.TOKEN_SPLITTER]: {
+				[NodeConnectionTypes.AiTextSplitter]: [
+					[{ node: NODE_NAMES.DATA_LOADER, type: NodeConnectionTypes.AiTextSplitter, index: 0 }],
+				],
+			},
+			[NODE_NAMES.DATA_LOADER]: {
+				[NodeConnectionTypes.AiDocument]: [
+					[{ node: NODE_NAMES.VECTOR_STORE_WRITE, type: NodeConnectionTypes.AiDocument, index: 0 }],
 				],
 			},
 			[NODE_NAMES.MEMORY]: {
@@ -348,6 +537,11 @@ export class ChatHubWorkflowService {
 						{ node: NODE_NAMES.RESTORE_CHAT_MEMORY, type: NodeConnectionTypes.AiMemory, index: 0 },
 						{ node: NODE_NAMES.CLEAR_CHAT_MEMORY, type: NodeConnectionTypes.AiMemory, index: 0 },
 					],
+				],
+			},
+			[NODE_NAMES.VECTOR_STORE_TOOL]: {
+				[NodeConnectionTypes.AiTool]: [
+					[{ node: NODE_NAMES.REPLY_AGENT, type: NodeConnectionTypes.AiTool, index: 0 }],
 				],
 			},
 			[NODE_NAMES.REPLY_AGENT]: {
@@ -383,6 +577,7 @@ export class ChatHubWorkflowService {
 			sessionId,
 			humanMessage,
 			attachments,
+			history.flatMap((h) => h.attachments?.filter((a) => a.mimeType === 'application/pdf') ?? []),
 		);
 
 		const executionData = createRunExecutionData({
@@ -466,7 +661,7 @@ export class ChatHubWorkflowService {
 			parameters: {},
 			type: CHAT_TRIGGER_NODE_TYPE,
 			typeVersion: 1.4,
-			position: [-448, -112],
+			position: [-832, 272],
 			id: uuidv4(),
 			name: NODE_NAMES.CHAT_TRIGGER,
 			webhookId: uuidv4(),
@@ -511,7 +706,7 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 			},
 			type: AGENT_LANGCHAIN_NODE_TYPE,
 			typeVersion: 3,
-			position: [608, 0],
+			position: [752, 128],
 			id: uuidv4(),
 			name: NODE_NAMES.REPLY_AGENT,
 		};
@@ -527,7 +722,7 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 
 		const { provider, model } = conversationModel;
 		const common = {
-			position: [608, 304] satisfies [number, number],
+			position: [752, 720] satisfies [number, number],
 			id: uuidv4(),
 			name: NODE_NAMES.CHAT_MODEL,
 			credentials,
@@ -669,7 +864,7 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 			},
 			type: MEMORY_BUFFER_WINDOW_NODE_TYPE,
 			typeVersion: 1.3,
-			position: [224, 304],
+			position: [-64, 496],
 			id: uuidv4(),
 			name: NODE_NAMES.MEMORY,
 		};
@@ -691,7 +886,7 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 			},
 			type: MEMORY_MANAGER_NODE_TYPE,
 			typeVersion: 1.1,
-			position: [-192, 48],
+			position: [-64, 160],
 			id: uuidv4(),
 			name: NODE_NAMES.RESTORE_CHAT_MEMORY,
 		};
@@ -781,6 +976,13 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 				throw new TotalFileSizeExceededError();
 			}
 
+			if (attachment.mimeType === 'application/pdf') {
+				return {
+					type: 'text',
+					text: `File: ${attachment.fileName ?? 'attachment'}\nUse Vector Store Tool to query content`,
+				};
+			}
+
 			if (this.isTextFile(attachment.mimeType)) {
 				const buffer = await this.chatHubAttachmentService.getAsBuffer(attachment);
 				const content = buffer.toString('utf-8');
@@ -846,7 +1048,7 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 			},
 			type: MEMORY_MANAGER_NODE_TYPE,
 			typeVersion: 1.1,
-			position: [976, 0],
+			position: [1120, 128],
 			id: uuidv4(),
 			name: NODE_NAMES.CLEAR_CHAT_MEMORY,
 		};
@@ -855,14 +1057,12 @@ ${this.getSystemMessageMetadata(timeZone)}`;
 	private buildMergeNode(): INode {
 		return {
 			parameters: {
-				mode: 'combine',
-				fieldsToMatchString: 'chatInput',
-				joinMode: 'enrichInput1',
-				options: {},
+				mode: 'append',
+				numberInputs: 3,
 			},
 			type: MERGE_NODE_TYPE,
 			typeVersion: 3.2,
-			position: [224, -96],
+			position: [368, 112],
 			id: uuidv4(),
 			name: NODE_NAMES.MERGE,
 		};
