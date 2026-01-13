@@ -25,6 +25,12 @@ export class ChatHubModule implements ModuleInterface {
 		return [ChatHubSession, ChatHubMessage, ChatHubAgent];
 	}
 
+	async context() {
+		const { ChatHubProxyService } = await import('./chat-hub-proxy.service');
+
+		return { chatHubProxyProvider: Container.get(ChatHubProxyService) };
+	}
+
 	@OnShutdown()
 	async shutdown() {}
 }
