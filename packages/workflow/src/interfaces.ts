@@ -20,7 +20,7 @@ import type {
 	BINARY_MODE_SEPARATE,
 } from './constants';
 
-import type { IChatHubSessionService } from './chat-hub.types';
+import type { IChatHubMemoryService } from './chat-hub.types';
 import type {
 	IDataTableProjectAggregateService,
 	IDataTableProjectService,
@@ -1000,13 +1000,19 @@ export type ChatHubProxyProvider = {
 		workflow: Workflow,
 		node: INode,
 		sessionId: string,
+		memoryNodeId: string,
+		parentMessageId: string | null,
 		ownerId?: string,
-	): Promise<IChatHubSessionService>;
+	): Promise<IChatHubMemoryService>;
 };
 
 export type ChatHubProxyFunctions = {
 	// Optional to account for situations where the chat-hub module is disabled
-	getChatHubProxy?(sessionId: string): Promise<IChatHubSessionService>;
+	getChatHubProxy?(
+		sessionId: string,
+		memoryNodeId: string,
+		parentMessageId: string | null,
+	): Promise<IChatHubMemoryService>;
 };
 
 type BaseExecutionFunctions = FunctionsBaseWithRequiredKeys<'getMode'> & {

@@ -21,8 +21,9 @@ export class ChatHubModule implements ModuleInterface {
 		const { ChatHubSession } = await import('./chat-hub-session.entity');
 		const { ChatHubMessage } = await import('./chat-hub-message.entity');
 		const { ChatHubAgent } = await import('./chat-hub-agent.entity');
+		const { ChatHubMemory } = await import('./chat-hub-memory.entity');
 
-		return [ChatHubSession, ChatHubMessage, ChatHubAgent];
+		return [ChatHubSession, ChatHubMessage, ChatHubAgent, ChatHubMemory];
 	}
 
 	async context() {

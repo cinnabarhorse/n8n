@@ -1,17 +1,16 @@
 import { Logger } from '@n8n/backend-common';
 import { Service } from '@n8n/di';
-import { v4 as uuid } from 'uuid';
 import {
 	ChatHubProxyProvider,
-	IChatHubSessionService,
-	ChatHubMemoryMessage,
-	AddAIMessageOptions,
-	AddToolMessageOptions,
+	IChatHubMemoryService,
+	ChatHubMemoryEntry,
 	INode,
 	Workflow,
 } from 'n8n-workflow';
+import { v4 as uuid } from 'uuid';
 
-import { buildMessageHistory } from './chat-hub-history.utils';
+import { buildMessageHistory, extractHumanMessageIds } from './chat-hub-history.utils';
+import { ChatHubMemoryRepository } from './chat-hub-memory.repository';
 import { ChatHubMessageRepository } from './chat-message.repository';
 import { ChatHubSessionRepository } from './chat-session.repository';
 
@@ -27,6 +26,7 @@ export function isAllowedNode(s: string): s is AllowedNode {
 @Service()
 export class ChatHubProxyService implements ChatHubProxyProvider {
 	constructor(
+		private readonly memoryRepository: ChatHubMemoryRepository,
 		private readonly messageRepository: ChatHubMessageRepository,
 		private readonly sessionRepository: ChatHubSessionRepository,
 		private readonly logger: Logger,
@@ -44,8 +44,10 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 		workflow: Workflow,
 		node: INode,
 		sessionId: string,
+		memoryNodeId: string,
+		parentMessageId: string | null,
 		ownerId?: string,
-	): Promise<IChatHubSessionService> {
+	): Promise<IChatHubMemoryService> {
 		this.validateRequest(node);
 
 		if (!ownerId) {
@@ -58,7 +60,14 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 		const workflowId = workflow.id;
 		const agentName = this.extractAgentName(workflow);
 
-		return this.makeChatHubOperations(sessionId, ownerId, workflowId, agentName);
+		return this.makeChatHubOperations(
+			sessionId,
+			memoryNodeId,
+			parentMessageId,
+			ownerId,
+			workflowId,
+			agentName,
+		);
 	}
 
 	/**
@@ -71,87 +80,155 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 			(n) => n.type === '@n8n/n8n-nodes-langchain.chatTrigger',
 		);
 
-		if (chatTriggerNode?.parameters?.agentName) {
+		if (
+			typeof chatTriggerNode?.parameters?.agentName === 'string' &&
+			chatTriggerNode.parameters.agentName.trim() !== ''
+		) {
 			return String(chatTriggerNode.parameters.agentName);
 		}
 
-		// Fall back to workflow name
-		return workflow.name || NAME_FALLBACK;
+		// Fall back to workflow name or default
+		if (workflow.name && workflow.name.trim() !== '') {
+			return workflow.name;
+		}
+
+		return NAME_FALLBACK;
 	}
 
 	private makeChatHubOperations(
 		sessionId: string,
+		memoryNodeId: string,
+		initialParentMessageId: string | null,
 		ownerId: string,
 		workflowId: string | undefined,
 		agentName: string,
-	): IChatHubSessionService {
+	): IChatHubMemoryService {
+		const memoryRepository = this.memoryRepository;
 		const messageRepository = this.messageRepository;
 		const sessionRepository = this.sessionRepository;
 		const logger = this.logger;
+
+		// Track the resolved parentMessageId - may be looked up if not provided
+		let resolvedParentMessageId: string | null = initialParentMessageId;
+		let parentMessageIdResolved = initialParentMessageId !== null;
+
+		/**
+		 * Resolve the parentMessageId if not provided.
+		 * For manual executions, look up the latest human message in the session.
+		 */
+		async function resolveParentMessageId(): Promise<string | null> {
+			if (parentMessageIdResolved) {
+				return resolvedParentMessageId;
+			}
+
+			// Look up the latest human message in the session
+			const chatMessages = await messageRepository.getManyBySessionId(sessionId);
+			const messageChain = buildMessageHistory(chatMessages);
+			const humanMessageIds = extractHumanMessageIds(messageChain);
+
+			if (humanMessageIds.length > 0) {
+				// Use the most recent human message as the parent
+				resolvedParentMessageId = humanMessageIds[humanMessageIds.length - 1];
+				logger.debug('Resolved parentMessageId from latest human message', {
+					sessionId,
+					memoryNodeId,
+					resolvedParentMessageId,
+				});
+			} else {
+				// No human messages yet - this is manual execution / execution outside Chat Hub
+				resolvedParentMessageId = null;
+				logger.debug('No human messages in session - starting fresh', {
+					sessionId,
+					memoryNodeId,
+				});
+			}
+
+			parentMessageIdResolved = true;
+			return resolvedParentMessageId;
+		}
 
 		return {
 			getOwnerId() {
 				return ownerId;
 			},
 
-			async getMessages(lastMessageId?: string): Promise<ChatHubMemoryMessage[]> {
-				const messages = await messageRepository.getManyBySessionId(sessionId);
+			async getMemory(): Promise<ChatHubMemoryEntry[]> {
+				const parentMessageId = await resolveParentMessageId();
 
-				if (messages.length === 0) {
-					return [];
+				// If we have a parentMessageId, load memory with branching support
+				if (parentMessageId) {
+					// Get all chat messages for the session
+					const chatMessages = await messageRepository.getManyBySessionId(sessionId);
+
+					// Build the message chain up to parentMessageId
+					const messageChain = buildMessageHistory(chatMessages, parentMessageId);
+
+					// Extract human message IDs from the chain
+					// These are the parent message IDs we should filter memory by
+					const humanMessageIds = extractHumanMessageIds(messageChain);
+
+					// Include the current parentMessageId if it's not already in the chain
+					// (it should be, but just in case)
+					if (!humanMessageIds.includes(parentMessageId)) {
+						humanMessageIds.push(parentMessageId);
+					}
+
+					// Load memory entries for this node filtered by the human message chain
+					const memoryEntries = await memoryRepository.getMemoryByParentMessageIds(
+						sessionId,
+						memoryNodeId,
+						humanMessageIds,
+					);
+
+					return memoryEntries.map((entry) => ({
+						id: entry.id,
+						role: entry.role,
+						content: entry.content,
+						name: entry.name,
+						createdAt: entry.createdAt,
+					}));
 				}
 
-				return buildMessageHistory(messages, lastMessageId);
+				// No parentMessageId (manual execution / execution outside Chat Hub) - load all memory for this node
+				const memoryEntries = await memoryRepository.getAllMemoryForNode(sessionId, memoryNodeId);
+
+				return memoryEntries.map((entry) => ({
+					id: entry.id,
+					role: entry.role,
+					content: entry.content,
+					name: entry.name,
+					createdAt: entry.createdAt,
+				}));
 			},
 
-			async addHumanMessage(content: string, previousMessageId: string | null): Promise<string> {
+			async addHumanMessage(content: string): Promise<void> {
+				const parentMessageId = await resolveParentMessageId();
 				const id = uuid();
-				await messageRepository.createChatMessage({
+				await memoryRepository.createMemoryEntry({
 					id,
 					sessionId,
-					type: 'human',
+					memoryNodeId,
+					parentMessageId,
+					role: 'human',
 					content,
 					name: 'User',
-					status: 'success',
-					previousMessageId,
-					provider: null,
-					model: null,
-					workflowId: null,
-					agentId: null,
-					executionId: null,
-					retryOfMessageId: null,
-					revisionOfMessageId: null,
-					attachments: null,
 				});
-				logger.debug('Added human message to chat hub', { sessionId, messageId: id });
-				return id;
+				logger.debug('Added human message to memory', { sessionId, memoryNodeId, memoryId: id });
 			},
 
-			async addAIMessage(
-				content: string,
-				previousMessageId: string | null,
-				options: AddAIMessageOptions = {},
-			): Promise<string> {
+			async addAIMessage(content: string): Promise<void> {
+				const parentMessageId = await resolveParentMessageId();
 				const id = uuid();
-				await messageRepository.createChatMessage({
+				await memoryRepository.createMemoryEntry({
 					id,
 					sessionId,
-					type: 'ai',
+					memoryNodeId,
+					parentMessageId,
+					role: 'ai',
 					content,
 					name: 'AI',
-					status: 'success',
-					previousMessageId,
-					executionId: options.executionId ?? null,
-					provider: (options.provider as 'n8n') ?? 'n8n',
-					model: options.model ?? null,
-					workflowId: null,
-					agentId: null,
-					retryOfMessageId: null,
-					revisionOfMessageId: null,
-					attachments: null,
 				});
-				logger.debug('Added AI message to chat hub', { sessionId, messageId: id });
-				return id;
+				logger.debug('Added AI message to memory', { sessionId, memoryNodeId, memoryId: id });
 			},
 
 			async addToolMessage(
@@ -159,9 +236,8 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 				toolName: string,
 				toolInput: unknown,
 				toolOutput: unknown,
-				previousMessageId: string | null,
-				options: AddToolMessageOptions = {},
-			): Promise<string> {
+			): Promise<void> {
+				const parentMessageId = await resolveParentMessageId();
 				const id = uuid();
 				const content = JSON.stringify({
 					toolCallId,
@@ -170,40 +246,33 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 					toolOutput,
 				});
 
-				await messageRepository.createChatMessage({
+				await memoryRepository.createMemoryEntry({
 					id,
 					sessionId,
-					type: 'tool',
+					memoryNodeId,
+					parentMessageId,
+					role: 'tool',
 					content,
 					name: toolName,
-					status: 'success',
-					previousMessageId,
-					executionId: options.executionId ?? null,
-					provider: null,
-					model: null,
-					workflowId: null,
-					agentId: null,
-					retryOfMessageId: null,
-					revisionOfMessageId: null,
-					attachments: null,
 				});
-				logger.debug('Added tool message to chat hub', {
+				logger.debug('Added tool message to memory', {
 					sessionId,
-					messageId: id,
+					memoryNodeId,
+					memoryId: id,
 					toolName,
 				});
-				return id;
 			},
 
-			async clearMessages(): Promise<void> {
-				await messageRepository.deleteBySessionId(sessionId);
-				logger.debug('Cleared all messages for session', { sessionId });
+			async clearMemory(): Promise<void> {
+				await memoryRepository.deleteBySessionAndNode(sessionId, memoryNodeId);
+				logger.debug('Cleared memory for node', { sessionId, memoryNodeId });
 			},
 
 			async ensureSession(title?: string): Promise<void> {
 				const exists = await sessionRepository.existsById(sessionId, ownerId);
 				if (!exists) {
-					const sessionTitle = title || NAME_FALLBACK;
+					// Use provided title, or fall back to agentName from workflow
+					const sessionTitle = title || agentName;
 					await sessionRepository.createChatSession({
 						id: sessionId,
 						ownerId,

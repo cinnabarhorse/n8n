@@ -1,54 +1,43 @@
 import { BaseChatMessageHistory } from '@langchain/core/chat_history';
 import type { BaseMessage } from '@langchain/core/messages';
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
-import type { IChatHubSessionService, ChatHubMemoryMessage } from 'n8n-workflow';
+import type { IChatHubMemoryService, ChatHubMemoryEntry } from 'n8n-workflow';
 
 /**
- * LangChain message history implementation that uses n8n's Chat Hub database.
- * This enables workflow agents to maintain persistent conversation state
- * that integrates with the Chat Hub UI.
+ * LangChain message history implementation that uses n8n's Chat Hub memory.
+ * Memory is stored separately from chat UI messages, allowing:
+ * - Multiple memory nodes in the same workflow to have isolated memory
+ * - Proper branching on edit/retry via parentMessageId linking
  */
 export class ChatHubMessageHistory extends BaseChatMessageHistory {
 	lc_namespace = ['langchain', 'stores', 'message', 'n8n_chat_hub'];
 
-	private proxy: IChatHubSessionService;
+	private memoryService: IChatHubMemoryService;
 
-	private lastMessageId: string | null = null;
-
-	private executionId?: number;
-
-	constructor(options: { proxy: IChatHubSessionService; executionId?: number }) {
+	constructor(options: { memoryService: IChatHubMemoryService }) {
 		super();
-		this.proxy = options.proxy;
-		this.executionId = options.executionId;
+		this.memoryService = options.memoryService;
 	}
 
 	async getMessages(): Promise<BaseMessage[]> {
-		const messages = await this.proxy.getMessages(this.lastMessageId ?? undefined);
-
-		// Update lastMessageId to the last message in the chain for proper chaining
-		// This ensures new messages chain off existing conversation instead of using null
-		if (messages.length > 0) {
-			this.lastMessageId = messages[messages.length - 1].id;
-		}
-
-		return messages.map((msg) => this.convertToLangChainMessage(msg));
+		const entries = await this.memoryService.getMemory();
+		return entries.map((entry) => this.convertToLangChainMessage(entry));
 	}
 
-	private convertToLangChainMessage(msg: ChatHubMemoryMessage): BaseMessage {
-		switch (msg.type) {
+	private convertToLangChainMessage(entry: ChatHubMemoryEntry): BaseMessage {
+		switch (entry.role) {
 			case 'human':
-				return new HumanMessage({ content: msg.content, name: msg.name });
+				return new HumanMessage({ content: entry.content, name: entry.name ?? undefined });
 
 			case 'ai':
-				return new AIMessage({ content: msg.content, name: msg.name });
+				return new AIMessage({ content: entry.content, name: entry.name ?? undefined });
 
 			case 'system':
-				return new SystemMessage({ content: msg.content });
+				return new SystemMessage({ content: entry.content });
 
 			case 'tool': {
 				// Parse tool message content
-				const toolData = this.parseToolMessageContent(msg.content);
+				const toolData = this.parseToolMessageContent(entry.content);
 				return new ToolMessage({
 					content: JSON.stringify(toolData.toolOutput),
 					tool_call_id: toolData.toolCallId,
@@ -57,8 +46,8 @@ export class ChatHubMessageHistory extends BaseChatMessageHistory {
 			}
 
 			default:
-				// Generic messages treated as system
-				return new SystemMessage({ content: msg.content });
+				// Unknown role treated as system
+				return new SystemMessage({ content: entry.content });
 		}
 	}
 
@@ -83,27 +72,20 @@ export class ChatHubMessageHistory extends BaseChatMessageHistory {
 
 	async addMessage(message: BaseMessage): Promise<void> {
 		const messageType = message._getType();
+		const content =
+			typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
 
 		if (messageType === 'human') {
-			this.lastMessageId = await this.proxy.addHumanMessage(
-				typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
-				this.lastMessageId,
-			);
+			await this.memoryService.addHumanMessage(content);
 		} else if (messageType === 'ai') {
-			this.lastMessageId = await this.proxy.addAIMessage(
-				typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
-				this.lastMessageId,
-				{ executionId: this.executionId },
-			);
+			await this.memoryService.addAIMessage(content);
 		} else if (messageType === 'tool') {
 			const toolMsg = message as ToolMessage;
-			this.lastMessageId = await this.proxy.addToolMessage(
+			await this.memoryService.addToolMessage(
 				toolMsg.tool_call_id,
 				toolMsg.name ?? 'unknown',
 				{}, // Input not available from ToolMessage
 				typeof toolMsg.content === 'string' ? toolMsg.content : toolMsg.content,
-				this.lastMessageId,
-				{ executionId: this.executionId },
 			);
 		}
 		// System messages are typically not saved in conversation history
@@ -124,7 +106,6 @@ export class ChatHubMessageHistory extends BaseChatMessageHistory {
 	}
 
 	async clear(): Promise<void> {
-		await this.proxy.clearMessages();
-		this.lastMessageId = null;
+		await this.memoryService.clearMemory();
 	}
 }

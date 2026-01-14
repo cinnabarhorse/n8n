@@ -54,7 +54,7 @@ export class MemoryChatHub implements INodeType {
 			getConnectionHintNoticeField([NodeConnectionTypes.AiAgent]),
 			{
 				displayName:
-					'This memory stores conversations in n8n Chat Hub, enabling persistent chat history visible in the Chat interface. Tool calls are stored as separate messages for proper agent behavior.',
+					'This memory stores conversations in n8n Chat Hub, enabling persistent chat history with support for edit/retry branching.',
 				name: 'chatHubNotice',
 				type: 'notice',
 				default: '',
@@ -63,6 +63,20 @@ export class MemoryChatHub implements INodeType {
 			expressionSessionKeyProperty(1),
 			sessionKeyProperty,
 			contextWindowLengthProperty,
+			{
+				// Hidden parameter for parentMessageId - injected by Chat Hub service
+				displayName: 'Parent Message ID',
+				name: 'parentMessageId',
+				type: 'string',
+				default: '',
+				description: 'ID of the parent message that triggered this execution (set by Chat Hub)',
+				displayOptions: {
+					show: {
+						// Never show this in the UI - it's set programmatically by Chat Hub
+						'@version': [-1],
+					},
+				},
+			},
 			{
 				displayName: 'Options',
 				name: 'options',
@@ -97,32 +111,39 @@ export class MemoryChatHub implements INodeType {
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
 		const sessionId = getSessionId(this, itemIndex);
 		const contextWindowLength = this.getNodeParameter('contextWindowLength', itemIndex) as number;
+		const parentMessageId =
+			(this.getNodeParameter('parentMessageId', itemIndex, '') as string) || null;
 		const options = this.getNodeParameter('options', itemIndex, {}) as {
 			autoCreateSession?: boolean;
 			sessionTitle?: string;
 		};
 
-		// Get the Chat Hub proxy
-		const proxy = await this.helpers.getChatHubProxy?.(sessionId);
+		// Get the node's internal ID to use as memoryNodeId
+		const node = this.getNode();
+		const memoryNodeId = node.id;
 
-		if (!proxy) {
+		// Get the Chat Hub proxy
+		// parentMessageId may be null for manual executions - proxy will look up latest message
+		const memoryService = await this.helpers.getChatHubProxy?.(
+			sessionId,
+			memoryNodeId,
+			parentMessageId,
+		);
+
+		if (!memoryService) {
 			throw new NodeOperationError(
-				this.getNode(),
+				node,
 				'Chat Hub module is not available. Ensure the chat-hub module is enabled.',
 			);
 		}
 
 		// Auto-create session if needed
 		if (options.autoCreateSession !== false) {
-			await proxy.ensureSession(options.sessionTitle);
+			await memoryService.ensureSession(options.sessionTitle);
 		}
 
-		// Get execution ID for linking messages to executions
-		const executionId = this.getExecutionId();
-
 		const chatHistory = new ChatHubMessageHistory({
-			proxy,
-			executionId: executionId ? parseInt(executionId, 10) : undefined,
+			memoryService,
 		});
 
 		const memory = new BufferWindowMemory({

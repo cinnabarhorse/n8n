@@ -76,3 +76,15 @@ export function buildMessageHistory(
 		};
 	});
 }
+
+/**
+ * Extracts the IDs of human (user) messages from a message history.
+ * These IDs are used as parent message IDs for memory entries,
+ * enabling proper branching on edit/retry.
+ *
+ * @param messages - Message history (typically from buildMessageHistory)
+ * @returns Array of human message IDs in chronological order
+ */
+export function extractHumanMessageIds(messages: ChatHubMemoryMessage[]): string[] {
+	return messages.filter((msg) => msg.type === 'human').map((msg) => msg.id);
+}

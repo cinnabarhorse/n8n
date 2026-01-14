@@ -1,9 +1,11 @@
 export type ChatHubMessageType = 'human' | 'ai' | 'system' | 'tool' | 'generic';
 export type ChatHubMessageStatus = 'success' | 'error' | 'running' | 'cancelled' | 'waiting';
+export type ChatHubMemoryRole = 'human' | 'ai' | 'system' | 'tool';
 
 /**
  * Message structure returned from Chat Hub for memory reconstruction.
  * Includes the chain tracking fields for proper history building.
+ * Used for building the chat_hub_messages chain.
  */
 export interface ChatHubMemoryMessage {
 	id: string;
@@ -17,55 +19,67 @@ export interface ChatHubMemoryMessage {
 }
 
 /**
- * Options for adding an AI message to chat hub
+ * Memory entry structure stored in chat_hub_memory table.
+ * Simpler than ChatHubMemoryMessage - no chaining, just linked to parent message.
  */
-export interface AddAIMessageOptions {
-	executionId?: number;
-	model?: string;
-	provider?: string;
+export interface ChatHubMemoryEntry {
+	id: string;
+	role: ChatHubMemoryRole;
+	content: string;
+	name: string | null;
+	createdAt: Date;
 }
 
 /**
- * Options for adding a tool message to chat hub
+ * Service interface for interacting with chat hub memory for a specific node.
+ * Memory is stored separately from chat UI messages, allowing:
+ * - Multiple memory nodes in the same workflow to have isolated memory
+ * - Proper branching on edit/retry via parentMessageId linking
  */
-export interface AddToolMessageOptions {
-	executionId?: number;
-}
-
-/**
- * Service interface for interacting with a specific chat hub session.
- * Provides methods to read and write messages for persistent conversation history.
- */
-export interface IChatHubSessionService {
+export interface IChatHubMemoryService {
 	/** Get session owner ID (the user who owns the session) */
 	getOwnerId(): string;
 
-	/** Get all messages for the session with proper history reconstruction */
-	getMessages(lastMessageId?: string): Promise<ChatHubMemoryMessage[]>;
+	/**
+	 * Get memory entries for this node.
+	 * Memory is loaded based on the current message chain,
+	 * properly handling edit/retry branching.
+	 */
+	getMemory(): Promise<ChatHubMemoryEntry[]>;
 
-	/** Add a human message to the session */
-	addHumanMessage(content: string, previousMessageId: string | null): Promise<string>;
+	/**
+	 * Add a human message to memory.
+	 * Called when recording the user's input that triggered the execution.
+	 */
+	addHumanMessage(content: string): Promise<void>;
 
-	/** Add an AI message to the session */
-	addAIMessage(
-		content: string,
-		previousMessageId: string | null,
-		options?: AddAIMessageOptions,
-	): Promise<string>;
+	/**
+	 * Add an AI message to memory.
+	 * Called when the agent produces a response.
+	 */
+	addAIMessage(content: string): Promise<void>;
 
-	/** Add a tool call/result message */
+	/**
+	 * Add a tool call/result message to memory.
+	 * Called when a tool is executed by the agent.
+	 */
 	addToolMessage(
 		toolCallId: string,
 		toolName: string,
 		toolInput: unknown,
 		toolOutput: unknown,
-		previousMessageId: string | null,
-		options?: AddToolMessageOptions,
-	): Promise<string>;
+	): Promise<void>;
 
-	/** Clear all messages for the session */
-	clearMessages(): Promise<void>;
+	/**
+	 * Clear all memory for this node in this session.
+	 */
+	clearMemory(): Promise<void>;
 
-	/** Ensure session exists, creating it if needed */
+	/**
+	 * Ensure session exists, creating it if needed.
+	 */
 	ensureSession(title?: string): Promise<void>;
 }
+
+// Keep old interface name as alias for backwards compatibility during transition
+export type IChatHubSessionService = IChatHubMemoryService;
