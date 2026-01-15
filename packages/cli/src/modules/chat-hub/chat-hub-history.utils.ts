@@ -4,7 +4,7 @@ import type { ChatHubMessage } from './chat-hub-message.entity';
 
 /**
  * Builds a linear message history chain from a collection of messages,
- * handling edits (revisionOfMessageId) and retries (retryOfMessageId).
+ * handling edits (revisionOfMessageId) and regeneration (retryOfMessageId).
  *
  * The algorithm:
  * 1. Start from the lastMessageId (or find the most recent message)
@@ -18,21 +18,21 @@ import type { ChatHubMessage } from './chat-hub-message.entity';
  */
 export function buildMessageHistory(
 	messages: ChatHubMessage[],
-	lastMessageId?: string,
+	lastMessageId: string | null,
 ): ChatHubMemoryMessage[] {
 	if (messages.length === 0) return [];
 
 	const messagesById = new Map(messages.map((m) => [m.id, m]));
 
 	// Find starting point
-	let currentId = lastMessageId;
-	if (!currentId) {
+	let current = lastMessageId;
+	if (!current) {
 		// Find the most recent message by createdAt
 		const sorted = [...messages].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-		currentId = sorted[0]?.id;
+		current = sorted[0]?.id;
 	}
 
-	if (!currentId) return [];
+	if (!current) return [];
 
 	// Build set of superseded message IDs
 	// A message is superseded if another message exists that is a revision or retry of it
@@ -46,19 +46,18 @@ export function buildMessageHistory(
 	const visited = new Set<string>();
 	const historyIds: string[] = [];
 
-	while (currentId && !visited.has(currentId)) {
-		const message = messagesById.get(currentId);
+	while (current && !visited.has(current)) {
+		const message = messagesById.get(current);
 		if (!message) break;
 
 		// Skip superseded messages - they've been replaced by an edit or retry
-		if (!superseded.has(currentId)) {
-			historyIds.unshift(currentId);
+		if (!superseded.has(current)) {
+			historyIds.unshift(current);
 		}
 
-		visited.add(currentId);
+		visited.add(current);
 
-		// Move to previous message
-		currentId = message.previousMessageId ?? undefined;
+		current = message.previousMessageId;
 	}
 
 	// Convert to output format
@@ -76,18 +75,6 @@ export function buildMessageHistory(
 			turnId: msg.turnId,
 		};
 	});
-}
-
-/**
- * Extracts the IDs of human (user) messages from a message history.
- * These IDs are used as parent message IDs for memory entries,
- * enabling proper branching on edit/retry.
- *
- * @param messages - Message history (typically from buildMessageHistory)
- * @returns Array of human message IDs in chronological order
- */
-export function extractHumanMessageIds(messages: ChatHubMemoryMessage[]): string[] {
-	return messages.filter((msg) => msg.type === 'human').map((msg) => msg.id);
 }
 
 /**

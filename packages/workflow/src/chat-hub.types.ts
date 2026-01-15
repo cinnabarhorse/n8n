@@ -122,7 +122,7 @@ export interface IChatHubMemoryService {
 	/**
 	 * Ensure session exists, creating it if needed.
 	 */
-	ensureSession(title?: string): Promise<void>;
+	ensureSession(): Promise<void>;
 }
 
 // Keep old interface name as alias for backwards compatibility during transition

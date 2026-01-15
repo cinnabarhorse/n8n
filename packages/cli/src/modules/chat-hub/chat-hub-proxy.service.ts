@@ -52,6 +52,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 		sessionId: string,
 		memoryNodeId: string,
 		turnId: string | null,
+		previousMessageId: string | null,
 		ownerId?: string,
 	): IChatHubMemoryService {
 		this.validateRequest(node);
@@ -68,6 +69,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 			sessionId,
 			memoryNodeId,
 			turnId,
+			previousMessageId,
 			ownerId,
 			workflowId,
 			agentName,
@@ -101,6 +103,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 		sessionId: string,
 		memoryNodeId: string,
 		providedTurnId: string | null,
+		previousMessageId: string | null,
 		ownerId: string,
 		workflowId: string | undefined,
 		agentName: string,
@@ -138,9 +141,9 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 						return [];
 					}
 
-					// Build the message chain - this automatically excludes superseded messages
-					// (those that have been replaced by edits or retries)
-					const messageChain = buildMessageHistory(chatMessages);
+					// Build the message chain starting from previousMessageId to get the correct branch.
+					// Without this, we would start from the most recent message which may be from a different branch.
+					const messageChain = buildMessageHistory(chatMessages, previousMessageId);
 
 					// Extract turn IDs from AI messages in the chain
 					// Memory entries are linked by turnId, so we load memory
@@ -154,6 +157,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 						sessionId,
 						memoryNodeId,
 						turnIds,
+						previousMessageId,
 					});
 
 					memoryEntries = await memoryRepository.getMemoryByTurnIds(

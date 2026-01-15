@@ -225,6 +225,7 @@ export class ChatHubService {
 					processedAttachments,
 					tz,
 					aiMessageId,
+					previousMessageId ?? null, // Branch context for memory loading
 					trx,
 				);
 			});
@@ -394,6 +395,7 @@ export class ChatHubService {
 						attachments,
 						tz,
 						aiMessageId,
+						messageToEdit.previousMessageId ?? null, // Branch context for memory loading
 						trx,
 					);
 				}
@@ -486,6 +488,7 @@ export class ChatHubService {
 					attachments,
 					tz,
 					aiMessageId,
+					lastHumanMessage.previousMessageId ?? null, // Branch context for memory loading
 					trx,
 				);
 
@@ -521,6 +524,7 @@ export class ChatHubService {
 		attachments: IBinaryData[],
 		timeZone: string,
 		aiMessageId: string | null,
+		memoryPreviousMessageId: string | null,
 		trx: EntityManager,
 	) {
 		if (model.provider === 'n8n') {
@@ -534,6 +538,7 @@ export class ChatHubService {
 				message,
 				attachments,
 				aiMessageId,
+				memoryPreviousMessageId,
 				trx,
 			);
 		}
@@ -663,6 +668,7 @@ export class ChatHubService {
 		message: string,
 		attachments: IBinaryData[],
 		aiMessageId: string,
+		memoryPreviousMessageId: string | null,
 		trx: EntityManager,
 	) {
 		const workflow = await this.workflowFinderService.findWorkflowForUser(
@@ -745,10 +751,11 @@ export class ChatHubService {
 			},
 		});
 
-		// Inject turnId into any MemoryChatHub nodes.
+		// Inject turnId and previousMessageId into any MemoryChatHub nodes.
 		// turnId is a correlation ID generated BEFORE workflow execution starts.
 		// Memory entries created during this turn will be linked to the AI message via this turnId.
 		// On regeneration, a new turnId → new memory → old AI message is superseded → old memory excluded.
+		// previousMessageId provides branch context for loading the correct memory chain.
 		const MEMORY_CHAT_HUB_NODE_TYPE = '@n8n/n8n-nodes-langchain.memoryChatHub';
 		const turnId = aiMessageId; // We reuse the aiMessageId as turnId for correlation
 		const nodes = workflow.activeVersion.nodes.map((node) => {
@@ -758,6 +765,7 @@ export class ChatHubService {
 					parameters: {
 						...node.parameters,
 						turnId,
+						previousMessageId: memoryPreviousMessageId,
 					},
 				};
 			}
