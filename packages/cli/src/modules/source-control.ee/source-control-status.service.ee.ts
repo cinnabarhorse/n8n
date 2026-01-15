@@ -9,9 +9,10 @@ import { ForbiddenError } from '@/errors/response-errors/forbidden.error';
 import { EventService } from '@/events/event.service';
 
 import { SourceControlGitService } from './source-control-git.service.ee';
+import { SOURCE_CONTROL_DATATABLES_EXPORT_FOLDER } from './constants';
 import {
 	hasOwnerChanged,
-	getDataTablesPath,
+	getDataTableExportPath,
 	getFoldersPath,
 	getTagsPath,
 	getTrackingInformationFromPrePushResult,
@@ -45,6 +46,10 @@ export class SourceControlStatusService {
 
 	private get gitFolder(): string {
 		return this.sourceControlPreferencesService.gitFolder;
+	}
+
+	private get dataTableExportFolder(): string {
+		return `${this.gitFolder}/${SOURCE_CONTROL_DATATABLES_EXPORT_FOLDER}`;
 	}
 
 	/**
@@ -464,7 +469,7 @@ export class SourceControlStatusService {
 		sourceControlledFiles: SourceControlledFile[],
 	) {
 		const dataTablesRemote =
-			(await this.sourceControlImportService.getRemoteDataTablesFromFile()) ?? [];
+			(await this.sourceControlImportService.getRemoteDataTablesFromFiles()) ?? [];
 		const dataTablesLocal =
 			(await this.sourceControlImportService.getLocalDataTablesFromDb()) ?? [];
 
@@ -501,7 +506,7 @@ export class SourceControlStatusService {
 				status: options.direction === 'push' ? 'deleted' : 'created',
 				location: options.direction === 'push' ? 'local' : 'remote',
 				conflict: false,
-				file: getDataTablesPath(this.gitFolder),
+				file: getDataTableExportPath(item.id, this.dataTableExportFolder),
 				updatedAt: new Date().toISOString(),
 			});
 		});
@@ -514,7 +519,7 @@ export class SourceControlStatusService {
 				status: options.direction === 'push' ? 'created' : 'deleted',
 				location: options.direction === 'push' ? 'local' : 'remote',
 				conflict: options.direction === 'push' ? false : true,
-				file: getDataTablesPath(this.gitFolder),
+				file: getDataTableExportPath(item.id, this.dataTableExportFolder),
 				updatedAt: new Date().toISOString(),
 			});
 		});
@@ -527,7 +532,7 @@ export class SourceControlStatusService {
 				status: 'modified',
 				location: options.direction === 'push' ? 'local' : 'remote',
 				conflict: true,
-				file: getDataTablesPath(this.gitFolder),
+				file: getDataTableExportPath(item.id, this.dataTableExportFolder),
 				updatedAt: new Date().toISOString(),
 			});
 		});
