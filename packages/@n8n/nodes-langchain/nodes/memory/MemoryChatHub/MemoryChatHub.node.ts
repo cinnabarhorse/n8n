@@ -73,15 +73,14 @@ export class MemoryChatHub implements INodeType {
 				description: 'Correlation ID for this execution turn (set by Chat Hub)',
 			},
 			{
-				// Hidden parameter for previousMessageId - injected by Chat Hub service before workflow execution.
-				// This is the ID of the message before the one being created, used to build the correct
-				// message chain for branching support. Without this, memory would be loaded from the
-				// most recent message in the database, which may be from a different branch.
-				displayName: 'Previous Message ID',
-				name: 'previousMessageId',
+				// Hidden parameter for previousTurnIds - injected by Chat Hub service before workflow execution.
+				// This is a JSON array of turnIds from AI messages in the conversation history.
+				// Used to load memory for the correct branch without re-querying messages.
+				displayName: 'Previous Turn IDs',
+				name: 'previousTurnIds',
 				type: 'hidden',
 				default: '',
-				description: 'ID of the message before the one being created (for branch context)',
+				description: 'String array of turnIds for memory loading (set by Chat Hub)',
 			},
 		],
 	};
@@ -90,8 +89,7 @@ export class MemoryChatHub implements INodeType {
 		const sessionId = getSessionId(this, itemIndex);
 		const contextWindowLength = this.getNodeParameter('contextWindowLength', itemIndex) as number;
 		const turnId = (this.getNodeParameter('turnId', itemIndex, '') as string) || null;
-		const previousMessageId =
-			(this.getNodeParameter('previousMessageId', itemIndex, '') as string) || null;
+		const previousTurnIds = this.getNodeParameter('previousTurnIds', itemIndex, []) as string[];
 
 		// Get the node's internal ID to use as memoryNodeId
 		const node = this.getNode();
@@ -101,12 +99,12 @@ export class MemoryChatHub implements INodeType {
 		// turnId is a correlation ID generated before execution starts.
 		// When provided by Chat Hub, it links memory entries to the AI message for edit/retry support.
 		// When null (manual executions), the proxy generates a random one to enable basic linear history.
-		// previousMessageId determines which branch of the conversation to load memory from.
+		// previousTurnIds contains the turnIds of AI messages in the conversation history for memory loading.
 		const memoryService = this.helpers.getChatHubProxy?.(
 			sessionId,
 			memoryNodeId,
 			turnId,
-			previousMessageId,
+			previousTurnIds,
 		);
 
 		if (!memoryService) {

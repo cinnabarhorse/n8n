@@ -14,10 +14,8 @@ import {
 } from 'n8n-workflow';
 import { v4 as uuid } from 'uuid';
 
-import { buildMessageHistory, extractTurnIds } from './chat-hub-history.utils';
 import { ChatHubMemory } from './chat-hub-memory.entity';
 import { ChatHubMemoryRepository } from './chat-hub-memory.repository';
-import { ChatHubMessageRepository } from './chat-message.repository';
 import { ChatHubSessionRepository } from './chat-session.repository';
 
 const ALLOWED_NODES = [CHAT_HUB_MEMORY_TYPE] as const;
@@ -33,7 +31,6 @@ export function isAllowedNode(s: string): s is AllowedNode {
 export class ChatHubProxyService implements ChatHubProxyProvider {
 	constructor(
 		private readonly memoryRepository: ChatHubMemoryRepository,
-		private readonly messageRepository: ChatHubMessageRepository,
 		private readonly sessionRepository: ChatHubSessionRepository,
 		private readonly logger: Logger,
 	) {
@@ -52,7 +49,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 		sessionId: string,
 		memoryNodeId: string,
 		turnId: string | null,
-		previousMessageId: string | null,
+		previousTurnIds: string[],
 		ownerId?: string,
 	): IChatHubMemoryService {
 		this.validateRequest(node);
@@ -69,7 +66,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 			sessionId,
 			memoryNodeId,
 			turnId,
-			previousMessageId,
+			previousTurnIds,
 			ownerId,
 			workflowId,
 			agentName,
@@ -103,13 +100,12 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 		sessionId: string,
 		memoryNodeId: string,
 		providedTurnId: string | null,
-		previousMessageId: string | null,
+		previousTurnIds: string[],
 		ownerId: string,
 		workflowId: string | undefined,
 		agentName: string,
 	): IChatHubMemoryService {
 		const memoryRepository = this.memoryRepository;
-		const messageRepository = this.messageRepository;
 		const sessionRepository = this.sessionRepository;
 		const logger = this.logger;
 
@@ -126,7 +122,7 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 			async getMemory(): Promise<ChatHubMemoryEntry[]> {
 				let memoryEntries: ChatHubMemory[];
 
-				if (providedTurnId === null) {
+				if (previousTurnIds.length === 0) {
 					// Manual execution: load ALL memory for this session+node (simple linear history)
 					logger.debug('Loading all memory for node (manual execution)', {
 						sessionId,
@@ -134,36 +130,17 @@ export class ChatHubProxyService implements ChatHubProxyProvider {
 					});
 					memoryEntries = await memoryRepository.getAllMemoryForNode(sessionId, memoryNodeId);
 				} else {
-					// Chat Hub execution: use turnId-based filtering for edit/retry branching
-					const chatMessages = await messageRepository.getManyBySessionId(sessionId);
-
-					if (chatMessages.length === 0) {
-						return [];
-					}
-
-					// Build the message chain starting from previousMessageId to get the correct branch.
-					// Without this, we would start from the most recent message which may be from a different branch.
-					const messageChain = buildMessageHistory(chatMessages, previousMessageId);
-
-					// Extract turn IDs from AI messages in the chain
-					// Memory entries are linked by turnId, so we load memory
-					// for all non-superseded AI messages in the conversation
-					const turnIds = extractTurnIds(messageChain);
-					if (turnIds.length === 0) {
-						return [];
-					}
-
-					logger.debug('Loading memory for turns in chain', {
+					// Chat Hub execution: load memory for the specified turns
+					logger.debug('Loading memory for specified turns', {
 						sessionId,
 						memoryNodeId,
-						turnIds,
-						previousMessageId,
+						previousTurnIds,
 					});
 
 					memoryEntries = await memoryRepository.getMemoryByTurnIds(
 						sessionId,
 						memoryNodeId,
-						turnIds,
+						previousTurnIds,
 					);
 				}
 

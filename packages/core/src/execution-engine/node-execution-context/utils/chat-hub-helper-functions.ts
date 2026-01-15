@@ -17,7 +17,7 @@ export function getChatHubHelperFunctions(
 			sessionId: string,
 			memoryNodeId: string,
 			turnId: string | null,
-			previousMessageId: string | null,
+			previousTurnIds: string[],
 		) =>
 			chatHubProxyProvider.getChatHubProxy(
 				workflow,
@@ -25,7 +25,7 @@ export function getChatHubHelperFunctions(
 				sessionId,
 				memoryNodeId,
 				turnId,
-				previousMessageId,
+				previousTurnIds,
 				additionalData.userId,
 			),
 	};

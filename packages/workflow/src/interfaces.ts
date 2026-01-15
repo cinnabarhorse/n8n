@@ -1002,7 +1002,7 @@ export type ChatHubProxyProvider = {
 		sessionId: string,
 		memoryNodeId: string,
 		turnId: string | null,
-		previousMessageId: string | null,
+		previousTurnIds: string[],
 		ownerId?: string,
 	): IChatHubMemoryService;
 };
@@ -1013,7 +1013,7 @@ export type ChatHubProxyFunctions = {
 		sessionId: string,
 		memoryNodeId: string,
 		turnId: string | null,
-		previousMessageId: string | null,
+		previousTurnIds: string[],
 	): IChatHubMemoryService;
 };
 
