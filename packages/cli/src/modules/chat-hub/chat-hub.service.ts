@@ -274,6 +274,7 @@ export class ChatHubService {
 				model,
 				res,
 				workflow.responseMode,
+				user,
 			);
 		}
 
@@ -961,6 +962,7 @@ export class ChatHubService {
 						model,
 						res,
 						responseMode,
+						user,
 					);
 				}
 			}
@@ -994,6 +996,7 @@ export class ChatHubService {
 		model: ChatHubConversationModel,
 		res: Response,
 		responseMode: 'responseNodes',
+		user: User,
 	) {
 		// Mark the waiting message as successful
 		await this.messageRepository.updateChatMessage(previousMessageId, {
@@ -1001,7 +1004,7 @@ export class ChatHubService {
 		});
 
 		while (true) {
-			await this.resumeExecution(sessionId, execution, message);
+			await this.resumeExecution(sessionId, execution, message, user);
 			previousMessageId = messageId;
 			messageId = uuidv4();
 
@@ -1213,12 +1216,17 @@ export class ChatHubService {
 		sessionId: ChatSessionId,
 		execution: IExecutionResponse,
 		message: string,
+		user: User,
 	) {
-		await this.executionManager.runWorkflow(execution, {
-			action: 'sendMessage',
-			chatInput: message,
-			sessionId,
-		});
+		await this.executionManager.runWorkflow(
+			execution,
+			{
+				action: 'sendMessage',
+				chatInput: message,
+				sessionId,
+			},
+			user.id,
+		);
 	}
 
 	private async executeWithStreaming(
