@@ -659,10 +659,6 @@ export class ChatHubService {
 		history: ChatHubMessage[],
 		trx: EntityManager,
 	) {
-		const previousTurnIds = history
-			.filter((m) => m.type === 'ai' && m.turnId)
-			.map((m) => m.turnId!);
-
 		const workflow = await this.workflowFinderService.findWorkflowForUser(
 			workflowId,
 			user,
@@ -756,7 +752,7 @@ export class ChatHubService {
 					parameters: {
 						...node.parameters,
 						turnId,
-						previousTurnIds,
+						previousTurnIds: this.extractPreviousTurnIds(history),
 					},
 				};
 			}
@@ -2119,5 +2115,18 @@ export class ChatHubService {
 		}
 
 		return errorText;
+	}
+
+	private extractPreviousTurnIds(history: ChatHubMessage[]): ChatMessageId[] {
+		const seen = new Set<string>();
+		const previousTurnIds = history.reduce<string[]>((acc, m) => {
+			if (m.type === 'ai' && m.turnId && !seen.has(m.turnId)) {
+				seen.add(m.turnId);
+				acc.push(m.turnId);
+			}
+			return acc;
+		}, []);
+
+		return previousTurnIds;
 	}
 }
