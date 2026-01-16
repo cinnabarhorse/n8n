@@ -120,7 +120,7 @@ const addWorkflow = () => {
 					<div :class="$style.cardContent">
 						<N8nIcon
 							:class="$style.cardIcon"
-							:icon="isLoadingReadyToRun ? 'spinner' : 'sparkles'"
+							:icon="isLoadingReadyToRun ? 'spinner' : 'zap'"
 							color="foreground-dark"
 							:stroke-width="1.5"
 							:spin="isLoadingReadyToRun"
