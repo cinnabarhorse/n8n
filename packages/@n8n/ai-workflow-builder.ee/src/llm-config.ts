@@ -130,6 +130,39 @@ function createOpenRouterModel(modelName: string) {
 	};
 }
 
+/**
+ * Creates a Claude model via OpenRouter for self-hosted AI Builder.
+ * Uses OpenAI-compatible API with Claude model through OpenRouter.
+ *
+ * @param modelName - OpenRouter model name (e.g., 'anthropic/claude-sonnet-4-5')
+ */
+export const openRouterClaude = async (
+	config: LLMProviderConfig & { model?: string },
+): Promise<BaseChatModel> => {
+	const { ChatOpenAI } = await import('@langchain/openai');
+	const modelName = config.model ?? 'anthropic/claude-sonnet-4-5';
+
+	return new ChatOpenAI({
+		model: modelName,
+		apiKey: config.apiKey,
+		temperature: 0,
+		maxTokens: MAX_OUTPUT_TOKENS,
+		configuration: {
+			baseURL: OPENROUTER_BASE_URL,
+			defaultHeaders: {
+				...config.headers,
+				// eslint-disable-next-line @typescript-eslint/naming-convention
+				'HTTP-Referer': 'https://n8n.io',
+				// eslint-disable-next-line @typescript-eslint/naming-convention
+				'X-Title': 'n8n AI Workflow Builder',
+			},
+			fetchOptions: {
+				dispatcher: getProxyAgent(OPENROUTER_BASE_URL),
+			},
+		},
+	});
+};
+
 // OpenRouter model factories
 export const glm47 = createOpenRouterModel('thudm/glm-4-plus');
 export const gemini3Flash = createOpenRouterModel('google/gemini-3-flash-preview');

@@ -233,7 +233,7 @@ export class FrontendService {
 			defaultLocale: this.globalConfig.defaultLocale,
 			userManagement: {
 				quota: this.license.getUsersLimit(),
-				showSetupOnFirstLoad: !(await this.ownershipService.hasInstanceOwner()),
+				showSetupOnFirstLoad: false, // Disabled for local dev - original: !(await this.ownershipService.hasInstanceOwner()),
 				smtpSetup: this.mailer.isEmailSetUp,
 				authenticationMethod: getCurrentAuthenticationMethod(),
 			},
@@ -395,7 +395,7 @@ export class FrontendService {
 		Object.assign(this.settings.userManagement, {
 			quota: this.license.getUsersLimit(),
 			authenticationMethod: getCurrentAuthenticationMethod(),
-			showSetupOnFirstLoad: !(await this.ownershipService.hasInstanceOwner()),
+			showSetupOnFirstLoad: false, // Disabled for local dev - original: !(await this.ownershipService.hasInstanceOwner()),
 		});
 
 		let dismissedBanners: string[] = [];
@@ -490,10 +490,23 @@ export class FrontendService {
 			this.settings.aiCredits.credits = this.license.getAiCredits();
 		}
 
-		if (isAiBuilderEnabled) {
-			this.settings.aiBuilder.enabled = isAiBuilderEnabled;
+		// Enable AI Builder if licensed OR if API key is configured (self-hosted)
+		const hasAnthropicKey = !!this.globalConfig.aiBuilder.apiKey;
+		const hasOpenRouterKey = !!this.globalConfig.aiBuilder.openRouterKey;
+		const hasSelfHostedAiKey = hasAnthropicKey || hasOpenRouterKey;
+		// Debug: log AI builder config
+		console.log('[AI Builder] Config check:', {
+			hasAnthropicKey,
+			hasOpenRouterKey,
+			hasSelfHostedAiKey,
+			isAiBuilderEnabled,
+			provider: this.globalConfig.aiBuilder.provider,
+		});
+		if (isAiBuilderEnabled || hasSelfHostedAiKey) {
+			this.settings.aiBuilder.enabled = true;
 			this.settings.aiBuilder.setup =
-				!!this.globalConfig.aiAssistant.baseUrl || !!this.globalConfig.aiBuilder.apiKey;
+				!!this.globalConfig.aiAssistant.baseUrl || hasSelfHostedAiKey;
+			console.log('[AI Builder] Enabled:', this.settings.aiBuilder);
 		}
 
 		this.settings.mfa.enabled = this.globalConfig.mfa.enabled;

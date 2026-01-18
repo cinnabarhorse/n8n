@@ -40,7 +40,7 @@ export class AiController {
 	// Use usesTemplates flag to bypass the send() wrapper which would cause
 	// "Cannot set headers after they are sent" error for streaming responses.
 	// This ensures errors during streaming are handled within the stream itself.
-	@Licensed('feat:aiBuilder')
+	// @Licensed('feat:aiBuilder') // Removed for self-hosted AI builder with own API key
 	@Post('/build', { rateLimit: { limit: 100 }, usesTemplates: true })
 	async build(
 		req: AuthenticatedRequest,
@@ -213,7 +213,7 @@ export class AiController {
 		}
 	}
 
-	@Licensed('feat:aiBuilder')
+	// @Licensed('feat:aiBuilder') // Removed for self-hosted AI builder with own API key
 	@Post('/sessions', { rateLimit: { limit: 100 } })
 	async getSessions(
 		req: AuthenticatedRequest,
@@ -229,7 +229,7 @@ export class AiController {
 		}
 	}
 
-	@Licensed('feat:aiBuilder')
+	// @Licensed('feat:aiBuilder') // Removed for self-hosted AI builder with own API key
 	@Get('/build/credits')
 	async getBuilderCredits(
 		req: AuthenticatedRequest,
@@ -243,7 +243,7 @@ export class AiController {
 		}
 	}
 
-	@Licensed('feat:aiBuilder')
+	// @Licensed('feat:aiBuilder') // Removed for self-hosted AI builder with own API key
 	@Post('/build/truncate-messages', { rateLimit: { limit: 100 } })
 	async truncateMessages(
 		req: AuthenticatedRequest,

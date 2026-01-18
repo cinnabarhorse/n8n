@@ -10,7 +10,7 @@ import { Client as TracingClient } from 'langsmith';
 import type { IUser, INodeTypeDescription, ITelemetryTrackProperties } from 'n8n-workflow';
 
 import { LLMServiceError } from '@/errors';
-import { anthropicClaudeSonnet45 } from '@/llm-config';
+import { anthropicClaudeSonnet45, openRouterClaude } from '@/llm-config';
 import { SessionManagerService } from '@/session-manager.service';
 import {
 	BuilderFeatureFlags,
@@ -111,6 +111,22 @@ export class AiWorkflowBuilderService {
 			}
 
 			// If base URL is not set, use environment variables
+			// Check if OpenRouter is configured
+			const provider = process.env.N8N_AI_PROVIDER ?? 'anthropic';
+			const openRouterKey = process.env.N8N_AI_OPENROUTER_KEY ?? '';
+
+			if (provider === 'openrouter' && openRouterKey) {
+				// Use OpenRouter with Claude model
+				const openRouterModel = process.env.N8N_AI_OPENROUTER_MODEL ?? 'anthropic/claude-sonnet-4-5';
+				const model = await openRouterClaude({
+					apiKey: openRouterKey,
+					model: openRouterModel,
+				});
+				// Cast to ChatAnthropic type for compatibility (OpenRouter Claude is API-compatible)
+				return { anthropicClaude: model as unknown as ChatAnthropic };
+			}
+
+			// Default: use Anthropic directly
 			const anthropicClaude = await AiWorkflowBuilderService.getAnthropicClaudeModel({
 				apiKey: process.env.N8N_AI_ANTHROPIC_KEY ?? '',
 			});
