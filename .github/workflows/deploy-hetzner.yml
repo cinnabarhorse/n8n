@@ -21,3 +21,8 @@ jobs:
             cd /opt/n8n-repo
             git pull --ff-only origin master
             COMPOSE_FILE=/opt/n8n/docker-compose.yml bash ./scripts/deploy-hetzner.sh
+      - name: Post-deploy health check
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors \
+            "https://wealthapy.com/"
