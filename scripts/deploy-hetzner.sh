@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/opt/n8n}"
+REPO_DIR="${REPO_DIR:-/opt/n8n-repo}"
 COMPOSE_FILE="${COMPOSE_FILE:-/opt/n8n/docker-compose.yml}"
 COMPOSE_SERVICE="${COMPOSE_SERVICE:-n8n}"
 RESTART_METHOD="${RESTART_METHOD:-pull}"

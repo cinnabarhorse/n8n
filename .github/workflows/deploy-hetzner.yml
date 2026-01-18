@@ -18,6 +18,6 @@ jobs:
           port: ${{ secrets.SSH_PORT || '22' }}
           script: |
             set -euo pipefail
-            cd /opt/n8n
+            cd /opt/n8n-repo
             git pull --ff-only origin master
-            bash ./scripts/deploy-hetzner.sh
+            COMPOSE_FILE=/opt/n8n/docker-compose.yml bash ./scripts/deploy-hetzner.sh
