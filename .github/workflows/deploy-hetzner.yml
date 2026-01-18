@@ -25,4 +25,4 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors \
-            "https://wealthapy.com/"
+            --head "https://wealthapy.com/healthz" >/dev/null
