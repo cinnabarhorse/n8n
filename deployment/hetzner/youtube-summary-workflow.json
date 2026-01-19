@@ -42,6 +42,7 @@
 				"specifyBody": "json",
 				"jsonBody": "={ \"url\": \"{{ $('Workflow Configuration').first().json.youtubeUrl }}\" }",
 				"options": {
+					"timeout": 120000,
 					"response": {
 						"response": {
 							"neverError": true
@@ -53,6 +54,9 @@
 			"name": "Get YouTube Transcript",
 			"type": "n8n-nodes-base.httpRequest",
 			"typeVersion": 4.3,
+			"retryOnFail": true,
+			"maxTries": 3,
+			"waitBetweenTries": 5,
 			"position": [448, 304]
 		},
 		{
