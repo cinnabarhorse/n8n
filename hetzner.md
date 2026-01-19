@@ -56,11 +56,17 @@ starts. This updates the workflows stored in the n8n database.
 Flags (environment variables):
 - `WORKFLOW_IMPORT_ENABLED=true` to enable imports
 - `WORKFLOW_IMPORT_LIST` comma-separated file paths relative to repo root
+- `WORKFLOW_IMPORT_REACTIVATE=true` to re-activate imported workflows
+- `WORKFLOW_IMPORT_API_URL` base URL for the n8n public API (e.g. `https://wealthapy.com`)
+- `WORKFLOW_IMPORT_API_KEY` API key for the n8n public API
 
 Example:
 ```bash
 WORKFLOW_IMPORT_ENABLED=true \
 WORKFLOW_IMPORT_LIST="deployment/hetzner/youtube-summary-workflow.json" \
+WORKFLOW_IMPORT_REACTIVATE=true \
+WORKFLOW_IMPORT_API_URL="https://wealthapy.com" \
+WORKFLOW_IMPORT_API_KEY="your_api_key_here" \
 COMPOSE_FILE=/opt/n8n/docker-compose.yml \
 bash ./scripts/deploy-hetzner.sh
 ```

@@ -7,6 +7,9 @@ COMPOSE_SERVICE="${COMPOSE_SERVICE:-n8n}"
 RESTART_METHOD="${RESTART_METHOD:-pull}"
 WORKFLOW_IMPORT_ENABLED="${WORKFLOW_IMPORT_ENABLED:-false}"
 WORKFLOW_IMPORT_LIST="${WORKFLOW_IMPORT_LIST:-}"
+WORKFLOW_IMPORT_REACTIVATE="${WORKFLOW_IMPORT_REACTIVATE:-true}"
+WORKFLOW_IMPORT_API_URL="${WORKFLOW_IMPORT_API_URL:-}"
+WORKFLOW_IMPORT_API_KEY="${WORKFLOW_IMPORT_API_KEY:-}"
 
 if [[ ! -f "${COMPOSE_FILE}" ]]; then
   echo "Compose file not found: ${COMPOSE_FILE}" >&2
@@ -54,6 +57,50 @@ if [[ "${WORKFLOW_IMPORT_ENABLED}" == "true" ]]; then
     dest_path="/tmp/n8n-workflow-import-${index}-$(basename "${trimmed_path}")"
     docker cp "${host_path}" "${container_id}:${dest_path}"
     docker compose -f "${COMPOSE_FILE}" exec -T "${COMPOSE_SERVICE}" n8n import:workflow --input "${dest_path}"
+
+    if [[ "${WORKFLOW_IMPORT_REACTIVATE}" == "true" ]]; then
+      if [[ -z "${WORKFLOW_IMPORT_API_URL}" || -z "${WORKFLOW_IMPORT_API_KEY}" ]]; then
+        echo "WORKFLOW_IMPORT_REACTIVATE=true but WORKFLOW_IMPORT_API_URL or WORKFLOW_IMPORT_API_KEY is missing." >&2
+        exit 1
+      fi
+
+      workflow_id="$(
+        docker compose -f "${COMPOSE_FILE}" exec -T "${COMPOSE_SERVICE}" node -e "
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('${dest_path}', 'utf8'));
+          if (!data.id) process.exit(2);
+          console.log(data.id);
+        "
+      )"
+
+      if [[ -z "${workflow_id}" ]]; then
+        echo "Workflow ID not found in ${dest_path}" >&2
+        exit 1
+      fi
+
+      docker compose -f "${COMPOSE_FILE}" exec -T "${COMPOSE_SERVICE}" node -e "
+        const apiUrl = new URL('${WORKFLOW_IMPORT_API_URL}');
+        const workflowId = '${workflow_id}';
+        fetch(new URL('/api/v1/workflows/' + workflowId + '/activate', apiUrl), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-N8N-API-KEY': '${WORKFLOW_IMPORT_API_KEY}',
+          },
+        })
+          .then(async (response) => {
+            if (!response.ok) {
+              const text = await response.text();
+              console.error(text);
+              process.exit(1);
+            }
+          })
+          .catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+      "
+    fi
 
     index=$((index + 1))
   done
