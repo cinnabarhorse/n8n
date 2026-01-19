@@ -4,7 +4,12 @@
 		{
 			"parameters": {
 				"rule": {
-					"interval": [{}]
+					"interval": [
+						{
+							"field": "cronExpression",
+							"expression": "0 */4 * * *"
+						}
+					]
 				}
 			},
 			"id": "e2e0d1b9-7d64-4d1f-a94d-8dba2f55a3ff",
