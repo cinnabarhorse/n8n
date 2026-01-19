@@ -1,0 +1,899 @@
+{
+	"name": "YouTube Summary (Docker)",
+	"nodes": [
+		{
+			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "id-1",
+							"name": "youtubeUrl",
+							"value": "={{ $json.body.youtubeUrl }}",
+							"type": "string"
+						},
+						{
+							"id": "id-3",
+							"name": "model",
+							"value": "openai/gpt-4o",
+							"type": "string"
+						},
+						{
+							"id": "id-4",
+							"name": "override",
+							"value": "={{ $json.body.override || false }}",
+							"type": "boolean"
+						}
+					]
+				},
+				"includeOtherFields": true,
+				"options": {}
+			},
+			"id": "6c7bb02e-a326-4299-9448-08dcaabf1bdc",
+			"name": "Workflow Configuration",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3.4,
+			"position": [224, 304]
+		},
+		{
+			"parameters": {
+				"method": "POST",
+				"url": "http://transcript-server:3456/transcript",
+				"sendBody": true,
+				"specifyBody": "json",
+				"jsonBody": "={ \"url\": \"{{ $('Workflow Configuration').first().json.youtubeUrl }}\" }",
+				"options": {
+					"response": {
+						"response": {
+							"neverError": true
+						}
+					}
+				}
+			},
+			"id": "de7143bd-c575-4a03-9b6b-13789e68e77f",
+			"name": "Get YouTube Transcript",
+			"type": "n8n-nodes-base.httpRequest",
+			"typeVersion": 4.3,
+			"position": [448, 304]
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"options": {
+						"caseSensitive": false,
+						"leftValue": "",
+						"typeValidation": "loose"
+					},
+					"conditions": [
+						{
+							"id": "id-1",
+							"leftValue": "={{ $json.text }}",
+							"operator": {
+								"type": "string",
+								"operation": "notEmpty"
+							}
+						}
+					],
+					"combinator": "and"
+				},
+				"options": {}
+			},
+			"id": "2f413840-120a-44a5-94d8-ebd2933decf9",
+			"name": "Check Transcript Success",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 2.3,
+			"position": [672, 304]
+		},
+		{
+			"parameters": {
+				"url": "https://api.airtable.com/v0/appibDOW5i8Wpi9I6/tblfARysEqHfFwYA8",
+				"authentication": "genericCredentialType",
+				"genericAuthType": "httpBearerAuth",
+				"sendQuery": true,
+				"queryParameters": {
+					"parameters": [
+						{
+							"name": "filterByFormula",
+							"value": "=AND({Video URL}='{{ $('Workflow Configuration').first().json.youtubeUrl }}', {Model}='{{ $('Workflow Configuration').first().json.model }}')"
+						}
+					]
+				},
+				"options": {
+					"response": {
+						"response": {
+							"neverError": true
+						}
+					}
+				}
+			},
+			"id": "24f423aa-ed3c-454e-823c-69747e4e58ca",
+			"name": "Check for Duplicate",
+			"type": "n8n-nodes-base.httpRequest",
+			"typeVersion": 4.3,
+			"position": [880, 208],
+			"credentials": {
+				"httpBearerAuth": {
+					"id": "Qr0zGTsCIB7RNO3A",
+					"name": "Bearer Auth account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"options": {
+						"caseSensitive": false,
+						"leftValue": "",
+						"typeValidation": "loose"
+					},
+					"conditions": [
+						{
+							"id": "id-1",
+							"leftValue": "={{ $json.records }}",
+							"operator": {
+								"type": "array",
+								"operation": "exists"
+							}
+						},
+						{
+							"id": "id-2",
+							"leftValue": "={{ $json.records.length }}",
+							"rightValue": "0",
+							"operator": {
+								"type": "number",
+								"operation": "gt"
+							}
+						}
+					],
+					"combinator": "and"
+				},
+				"options": {}
+			},
+			"id": "b12859b1-4637-4905-9b7e-f300e923f751",
+			"name": "Duplicate Exists?",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 2.3,
+			"position": [1104, 208]
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"options": {
+						"caseSensitive": false,
+						"leftValue": "",
+						"typeValidation": "loose"
+					},
+					"conditions": [
+						{
+							"id": "id-1",
+							"leftValue": "={{ $('Workflow Configuration').first().json.override }}",
+							"rightValue": "true",
+							"operator": {
+								"type": "boolean",
+								"operation": "equals"
+							}
+						}
+					],
+					"combinator": "and"
+				},
+				"options": {}
+			},
+			"id": "053f58ef-1578-45d4-b90f-8a1a70bd74af",
+			"name": "Check Override Flag",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 2.3,
+			"position": [1328, 112]
+		},
+		{
+			"parameters": {
+				"respondWith": "json",
+				"responseBody": "={{ { \"error\": \"A summary for this video with this model already exists.\", \"youtubeUrl\": $('Workflow Configuration').first().json.youtubeUrl, \"model\": $('Workflow Configuration').first().json.model, \"existingRecordId\": $json.records[0].id } }}",
+				"options": {
+					"responseCode": 409
+				}
+			},
+			"id": "451f5504-ad4a-4670-a4c1-b42863df768f",
+			"name": "Return Duplicate Error",
+			"type": "n8n-nodes-base.respondToWebhook",
+			"typeVersion": 1.5,
+			"position": [1552, 208]
+		},
+		{
+			"parameters": {
+				"promptType": "define",
+				"text": "={{ $('Get YouTube Transcript').first().json.text }}",
+				"options": {
+					"systemMessage": "<system prompt>\nNEVER mention that you're an AI.\nAvoid any language constructs that could be interpreted as expressing remorse, apology, or regret.\nIf events or information are beyond your scope or knowledge cutoff date, provide a response stating 'I don't know' without elaborating on why the information is unavailable.\nRefrain from disclaimers about you not being a professional or expert.\nKeep responses unique and free of repetition.\nNever suggest seeking information from elsewhere.\nAlways focus on the key points in my questions to determine my intent.\nBreak down complex problems or tasks into smaller, manageable steps and explain each one using reasoning.\nProvide multiple perspectives or solutions.\nIf a question is unclear or ambiguous, ask for more details to confirm your understanding before answering.\nCite credible sources or references to support your answers with links if available.\nIf a mistake is made in a previous response, recognize and correct it.\n</system prompt>\n\n<task>\nYou are a helpful assistant that summarizes YouTube video transcripts.\n\nInput: You will receive transcript data that includes text segments of the transcript.\n\nYour tasks:\n1. Read the entire transcript and infer the video's purpose, audience, and main narrative.\n2. Create a clear, concise, well-structured summary that captures the important ideas without filler.\n3. Ground the summary in evidence by including exact quotes copied verbatim from the transcript.\n4. Provide an AI Review section with numeric scores.\n\nOutput format:\n\nAI Review (place this at the very top)\n- Insightful: 1-10 (how many unique insights are in the video, compared to its length)\n- Unique: 1-10 (how unique is the content compared to other content in its niche)\n- AI Created: 1-10 (how likely is it that the content is AI created)\n- Informative: 1-10 (how informative is the piece)\n\n1) One-paragraph overview (3 to 6 sentences)\n- High-level explanation of what the video is about and what it argues or teaches.\n- Include 1 to 2 short direct quotes that best capture the theme.\n\n2) Structured outline (the core deliverable)\n- Break the video into 4 to 10 sections (depending on length), each containing:\n  - Section title (descriptive, not generic)\n  - 2 to 5 bullet points summarizing the key ideas in that section\n  - 1 to 2 exact quotes from that section\n\n3) Key takeaways (5 to 12 bullets)\n- The most actionable or memorable points.\n- Each takeaway should be supported by a relevant direct quote or specific detail from the transcript.\n\n4) Notable quotes (optional but recommended)\n- A curated list of the best quotes from the video.\n- Quotes must be verbatim from the transcript.\n\n5) Terms, people, tools, or references mentioned (if present)\n- Short glossary-style list of items that matter to understanding the video.\n\nRules for quotes:\n- Quotes must be verbatim from the transcript, including slang or imperfect grammar.\n- Do not invent quotes.\n- Avoid redundant quotes that repeat the same idea.\n\nStyle guidelines:\n- Be concise but complete: focus on claims, evidence, steps, and conclusions.\n- Prefer specifics over vague phrasing.\n- Use clear headings and bullet points.\n</task>"
+				}
+			},
+			"id": "1aa2c420-7a49-4897-9628-9bd202fb0ad0",
+			"name": "Summarize Transcript",
+			"type": "@n8n/n8n-nodes-langchain.agent",
+			"typeVersion": 3,
+			"position": [1552, -96]
+		},
+		{
+			"parameters": {
+				"model": "openai/gpt-4o",
+				"options": {}
+			},
+			"id": "2576ea26-6cee-4eb9-9c49-ce32ab6c5cc1",
+			"name": "OpenRouter Chat Model",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+			"typeVersion": 1,
+			"position": [1552, 128],
+			"credentials": {
+				"openRouterApi": {
+					"id": "AHBKDfg716ifUGFt",
+					"name": "OpenRouter account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"promptType": "define",
+				"text": "=Video Title: {{ $('Get YouTube Transcript').first().json.videoTitle }}\n\nSummary: {{ $('Summarize Transcript').first().json.output }}",
+				"options": {
+					"systemMessage": "You are a keyword extraction assistant. Extract 8 to 15 highly relevant keywords or key phrases from the provided video title and summary.\n\nReturn ONLY a single line containing a comma-separated list of keywords. Do not include any other text, headings, explanations, bullets, or formatting.\n\nInclude keywords that cover:\n- Main topics and themes\n- Important concepts or terminology\n- Names of people, companies, products, platforms, and tools\n- Industry or domain-specific terms\n- Named events, standards, or acronyms if central to the content\n\nCashtag rule:\n- For stock tickers and crypto tokens, always prefix with $ (example: $AAPL, $TSLA, $BTC, $ETH, $SOL, $GHST).\n- If both a project name and token appear, you may include both when useful (example: Aavegotchi, $GHST).\n\nPunctuation rule:\n- Avoid parentheses and unnecessary punctuation.\n- Use plain words where possible.\n- Hyphens are allowed only when the term is commonly written that way.\n- No quotes, slashes, or colons.\n\nDeduplication and quality rules:\n- No duplicates or near-duplicates.\n- Prefer specific phrases over generic single words.\n- Keep phrases short, typically 1 to 4 words.\n- Only include keywords supported by the title or summary. Do not invent.\n\nExample output:\nAI, Marc Andreessen, startups, venture capital, technology trends, innovation, $AAPL, $BTC"
+				}
+			},
+			"id": "423fdb56-0d2f-4afa-b358-5812b9dc18ce",
+			"name": "Extract Keywords",
+			"type": "@n8n/n8n-nodes-langchain.agent",
+			"typeVersion": 3,
+			"position": [1760, -96]
+		},
+		{
+			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "id-1",
+							"name": "Video URL",
+							"value": "={{ $('Workflow Configuration').first().json.youtubeUrl }}",
+							"type": "string"
+						},
+						{
+							"id": "id-2",
+							"name": "Transcript",
+							"value": "={{ $('Get YouTube Transcript').first().json.text }}",
+							"type": "string"
+						},
+						{
+							"id": "id-3",
+							"name": "Summary",
+							"value": "={{ $('Summarize Transcript').first().json.output }}",
+							"type": "string"
+						},
+						{
+							"id": "id-4",
+							"name": "Created At",
+							"value": "={{ $now.toISO() }}",
+							"type": "string"
+						},
+						{
+							"id": "id-5",
+							"name": "Video Title",
+							"value": "={{ $('Get YouTube Transcript').first().json.videoTitle }}",
+							"type": "string"
+						},
+						{
+							"id": "id-6",
+							"name": "Channel Name",
+							"value": "={{ $('Get YouTube Transcript').first().json.channelName }}",
+							"type": "string"
+						},
+						{
+							"id": "id-7",
+							"name": "Views",
+							"value": "={{ $('Get YouTube Transcript').first().json.views }}",
+							"type": "string"
+						},
+						{
+							"id": "id-8",
+							"name": "Subscribers",
+							"value": "",
+							"type": "string"
+						},
+						{
+							"id": "id-9",
+							"name": "Keywords",
+							"value": "={{ $('Extract Keywords').first().json.output }}",
+							"type": "string"
+						},
+						{
+							"id": "id-10",
+							"name": "Model",
+							"value": "={{ $('Workflow Configuration').first().json.model }}",
+							"type": "string"
+						},
+						{
+							"id": "id-11",
+							"name": "isUpdate",
+							"value": "={{ $('Check for Duplicate').first().json.records && $('Check for Duplicate').first().json.records.length > 0 && $('Workflow Configuration').first().json.override === true }}",
+							"type": "boolean"
+						}
+					]
+				},
+				"options": {}
+			},
+			"id": "709d8ecb-7a06-491d-a615-7018eb85d72d",
+			"name": "Prepare Airtable Data",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3.4,
+			"position": [1984, -96]
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"options": {
+						"caseSensitive": false,
+						"leftValue": "",
+						"typeValidation": "loose"
+					},
+					"conditions": [
+						{
+							"id": "id-1",
+							"leftValue": "={{ $json.isUpdate }}",
+							"rightValue": true,
+							"operator": {
+								"type": "boolean",
+								"operation": "equals"
+							}
+						}
+					],
+					"combinator": "and"
+				},
+				"options": {}
+			},
+			"id": "route-to-airtable",
+			"name": "Route to Airtable",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 2.3,
+			"position": [2208, -96]
+		},
+		{
+			"parameters": {
+				"operation": "update",
+				"base": {
+					"__rl": true,
+					"mode": "id",
+					"value": "appibDOW5i8Wpi9I6"
+				},
+				"table": {
+					"__rl": true,
+					"mode": "id",
+					"value": "tblfARysEqHfFwYA8"
+				},
+				"columns": {
+					"mappingMode": "defineBelow",
+					"value": {
+						"id": "={{ $('Check for Duplicate').first().json.records[0].id }}",
+						"Transcript": "={{ $json.Transcript.slice(0, 99000) }}",
+						"Summary": "={{ $json.Summary }}",
+						"Keywords": "={{ $json.Keywords }}",
+						"Video Title": "={{ $json['Video Title'] }}",
+						"Channel Name": "={{ $json['Channel Name'] }}",
+						"Views": "={{ $json.Views }}",
+						"Subscribers": "={{ $json.Subscribers }}"
+					},
+					"matchingColumns": [
+						"id"
+					],
+					"schema": [
+						{
+							"id": "id",
+							"displayName": "id",
+							"required": false,
+							"defaultMatch": true,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Transcript",
+							"displayName": "Transcript",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Summary",
+							"displayName": "Summary",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Keywords",
+							"displayName": "Keywords",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Video Title",
+							"displayName": "Video Title",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Channel Name",
+							"displayName": "Channel Name",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Views",
+							"displayName": "Views",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Subscribers",
+							"displayName": "Subscribers",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						}
+					],
+					"attemptToConvertTypes": false,
+					"convertFieldsToString": false
+				},
+				"options": {
+					"typecast": true
+				}
+			},
+			"id": "a558b22e-9e78-4fae-8f1f-9e295fdd79cd",
+			"name": "Update Existing Record",
+			"type": "n8n-nodes-base.airtable",
+			"typeVersion": 2.1,
+			"position": [2432, -208],
+			"credentials": {
+				"airtableTokenApi": {
+					"id": "fS9K98JsMcn8HtYS",
+					"name": "Airtable Personal Access Token account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"operation": "create",
+				"base": {
+					"__rl": true,
+					"mode": "id",
+					"value": "appibDOW5i8Wpi9I6"
+				},
+				"table": {
+					"__rl": true,
+					"mode": "id",
+					"value": "tblfARysEqHfFwYA8"
+				},
+				"columns": {
+					"mappingMode": "defineBelow",
+					"value": {
+						"Video URL": "={{ $json['Video URL'] }}",
+						"Transcript": "={{ $json.Transcript.slice(0, 99000) }}",
+						"Summary": "={{ $json.Summary }}",
+						"Created At": "={{ $json['Created At'] }}",
+						"Video Title": "={{ $json['Video Title'] }}",
+						"Channel Name": "={{ $json['Channel Name'] }}",
+						"Views": "={{ $json.Views }}",
+						"Subscribers": "={{ $json.Subscribers }}",
+						"Keywords": "={{ $json.Keywords }}",
+						"Model": "={{ $json.Model }}"
+					},
+					"matchingColumns": [],
+					"schema": [
+						{
+							"id": "Video URL",
+							"displayName": "Video URL",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Transcript",
+							"displayName": "Transcript",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Summary",
+							"displayName": "Summary",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Created At",
+							"displayName": "Created At",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "dateTime",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Video Title",
+							"displayName": "Video Title",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Channel Name",
+							"displayName": "Channel Name",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Views",
+							"displayName": "Views",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Subscribers",
+							"displayName": "Subscribers",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Keywords",
+							"displayName": "Keywords",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						},
+						{
+							"id": "Model",
+							"displayName": "Model",
+							"required": false,
+							"defaultMatch": false,
+							"canBeUsedToMatch": true,
+							"display": true,
+							"type": "string",
+							"readOnly": false,
+							"removed": false
+						}
+					],
+					"attemptToConvertTypes": false,
+					"convertFieldsToString": false
+				},
+				"options": {
+					"typecast": true
+				}
+			},
+			"id": "4e1306b4-89dc-411d-ab7a-e0e9ffa959b0",
+			"name": "Save to Airtable",
+			"type": "n8n-nodes-base.airtable",
+			"typeVersion": 2.1,
+			"position": [2432, 0],
+			"credentials": {
+				"airtableTokenApi": {
+					"id": "fS9K98JsMcn8HtYS",
+					"name": "Airtable Personal Access Token account"
+				}
+			}
+		},
+		{
+			"parameters": {
+				"respondWith": "json",
+				"responseBody": "={{ { \"summary\": $('Summarize Transcript').first().json.output, \"airtableId\": $json.id, \"videoId\": $('Get YouTube Transcript').first().json.videoId } }}",
+				"options": {}
+			},
+			"id": "7a850876-73ac-4c42-a27a-a365b7f6faa3",
+			"name": "Return Summary",
+			"type": "n8n-nodes-base.respondToWebhook",
+			"typeVersion": 1.5,
+			"position": [2640, -96]
+		},
+		{
+			"parameters": {
+				"respondWith": "json",
+				"responseBody": "={{ { \"error\": \"Unable to fetch transcript. The video may not have captions available, be age-restricted, or private.\", \"youtubeUrl\": $('Workflow Configuration').first().json.youtubeUrl } }}",
+				"options": {
+					"responseCode": 400
+				}
+			},
+			"id": "fe6309e6-b2d6-4e3c-982d-50f412665ec5",
+			"name": "Return Error",
+			"type": "n8n-nodes-base.respondToWebhook",
+			"typeVersion": 1.5,
+			"position": [880, 400]
+		},
+		{
+			"parameters": {
+				"httpMethod": "POST",
+				"path": "youtube-summary",
+				"authentication": "headerAuth",
+				"responseMode": "responseNode",
+				"options": {}
+			},
+			"id": "67a84a7d-5aff-46d8-a602-3b0ef2e55812",
+			"name": "Webhook Trigger",
+			"type": "n8n-nodes-base.webhook",
+			"typeVersion": 2.1,
+			"position": [0, 304],
+			"webhookId": "84bd8783-249b-4b96-9174-7f476fd3a4a2",
+			"credentials": {
+				"httpHeaderAuth": {
+					"id": "webhook-header-auth",
+					"name": "YouTube Summary API Key"
+				}
+			}
+		}
+	],
+	"pinData": {},
+	"connections": {
+		"Webhook Trigger": {
+			"main": [
+				[
+					{
+						"node": "Workflow Configuration",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Workflow Configuration": {
+			"main": [
+				[
+					{
+						"node": "Get YouTube Transcript",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Get YouTube Transcript": {
+			"main": [
+				[
+					{
+						"node": "Check Transcript Success",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Check Transcript Success": {
+			"main": [
+				[
+					{
+						"node": "Check for Duplicate",
+						"type": "main",
+						"index": 0
+					}
+				],
+				[
+					{
+						"node": "Return Error",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Check for Duplicate": {
+			"main": [
+				[
+					{
+						"node": "Duplicate Exists?",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Duplicate Exists?": {
+			"main": [
+				[
+					{
+						"node": "Check Override Flag",
+						"type": "main",
+						"index": 0
+					}
+				],
+				[
+					{
+						"node": "Summarize Transcript",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Check Override Flag": {
+			"main": [
+				[
+					{
+						"node": "Summarize Transcript",
+						"type": "main",
+						"index": 0
+					}
+				],
+				[
+					{
+						"node": "Return Duplicate Error",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"OpenRouter Chat Model": {
+			"ai_languageModel": [
+				[
+					{
+						"node": "Summarize Transcript",
+						"type": "ai_languageModel",
+						"index": 0
+					},
+					{
+						"node": "Extract Keywords",
+						"type": "ai_languageModel",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Summarize Transcript": {
+			"main": [
+				[
+					{
+						"node": "Extract Keywords",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Extract Keywords": {
+			"main": [
+				[
+					{
+						"node": "Prepare Airtable Data",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Prepare Airtable Data": {
+			"main": [
+				[
+					{
+						"node": "Route to Airtable",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Route to Airtable": {
+			"main": [
+				[
+					{
+						"node": "Update Existing Record",
+						"type": "main",
+						"index": 0
+					}
+				],
+				[
+					{
+						"node": "Save to Airtable",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Update Existing Record": {
+			"main": [
+				[
+					{
+						"node": "Return Summary",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Save to Airtable": {
+			"main": [
+				[
+					{
+						"node": "Return Summary",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"active": false,
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"versionId": "dc882aa7-a538-4166-beac-becdf90c3abf",
+	"meta": {
+		"templateCredsSetupCompleted": true,
+		"instanceId": "41176f47a3812a9830e85384100cd687d08b3219ae44f8aa4fda17449ed060f5"
+	},
+	"id": "cvavyY2aDVxbokQw",
+	"tags": []
+}
