@@ -20,7 +20,7 @@
 						{
 							"id": "id-4",
 							"name": "override",
-							"value": "={{ $json.body.override || false }}",
+							"value": "={{ ['true', true, '1', 1].includes($json.body?.override ?? $json.body?.overwrite ?? $json.query?.override ?? $json.query?.overwrite ?? false) }}",
 							"type": "boolean"
 						}
 					]
