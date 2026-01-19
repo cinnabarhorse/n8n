@@ -8,7 +8,7 @@
 						{
 							"id": "id-1",
 							"name": "youtubeUrl",
-							"value": "={{ $json.body.youtubeUrl }}",
+							"value": "={{ $json.body?.youtubeUrl ?? $json.youtubeUrl ?? '' }}",
 							"type": "string"
 						},
 						{
@@ -20,7 +20,7 @@
 						{
 							"id": "id-4",
 							"name": "override",
-							"value": "={{ ['true', true, '1', 1].includes($json.body?.override ?? $json.body?.overwrite ?? $json.query?.override ?? $json.query?.overwrite ?? false) }}",
+							"value": "={{ ['true', true, '1', 1].includes($json.body?.override ?? $json.body?.overwrite ?? $json.query?.override ?? $json.query?.overwrite ?? $json.override ?? $json.overwrite ?? false) }}",
 							"type": "boolean"
 						}
 					]
@@ -697,11 +697,32 @@
 					"name": "YouTube Summary API Key"
 				}
 			}
+		},
+		{
+			"parameters": {
+				"inputSource": "passthrough"
+			},
+			"id": "cbbf4c95-0e69-4f72-8c0f-e84c06d21c35",
+			"name": "When Executed by Another Workflow",
+			"type": "n8n-nodes-base.executeWorkflowTrigger",
+			"typeVersion": 1.1,
+			"position": [0, 112]
 		}
 	],
 	"pinData": {},
 	"connections": {
 		"Webhook Trigger": {
+			"main": [
+				[
+					{
+						"node": "Workflow Configuration",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"When Executed by Another Workflow": {
 			"main": [
 				[
 					{

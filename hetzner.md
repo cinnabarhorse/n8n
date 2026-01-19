@@ -12,7 +12,12 @@ setup for the n8n fork running on Hetzner.
 ## Workflows
 
 - YouTube Summary: Takes a YouTube URL, fetches transcript, and generates a summary.
+- YouTube Channel New Video -> Summary: Polls a channel feed and runs the summary workflow for new uploads.
 - Add any additional workflows here as they become finalized.
+
+## Workflow IDs
+
+- YouTube Summary workflow ID: `cvavyY2aDVxbokQw`
 
 ## Repo + Paths (current defaults)
 

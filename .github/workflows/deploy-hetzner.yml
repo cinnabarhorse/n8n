@@ -21,7 +21,7 @@ jobs:
             cd /opt/n8n-repo
             git pull --ff-only origin master
             WORKFLOW_IMPORT_ENABLED=true \
-            WORKFLOW_IMPORT_LIST="deployment/hetzner/youtube-summary-workflow.json" \
+            WORKFLOW_IMPORT_LIST="__ALL__" \
             WORKFLOW_IMPORT_REACTIVATE=true \
             WORKFLOW_IMPORT_API_URL="https://wealthapy.com" \
             WORKFLOW_IMPORT_API_KEY="${{ secrets.N8N_API_KEY }}" \

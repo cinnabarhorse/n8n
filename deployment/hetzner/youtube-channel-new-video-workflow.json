@@ -1,0 +1,204 @@
+{
+	"name": "YouTube Channel New Video -> Summary",
+	"nodes": [
+		{
+			"parameters": {
+				"rule": {
+					"interval": [{}]
+				}
+			},
+			"id": "e2e0d1b9-7d64-4d1f-a94d-8dba2f55a3ff",
+			"name": "Schedule Trigger",
+			"type": "n8n-nodes-base.scheduleTrigger",
+			"typeVersion": 1.2,
+			"position": [0, 304]
+		},
+		{
+			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "3f9dc0d8-f9d9-4b49-a343-928b5b1b83ad",
+							"name": "channelIds",
+							"value": "=[\"UCznv7Vf9nBdJYvBagFdAHWw\"]",
+							"type": "string"
+						}
+					]
+				},
+				"includeOtherFields": true,
+				"options": {}
+			},
+			"id": "4f05e380-9780-4a7e-84dd-793c105e8e5a",
+			"name": "Workflow Configuration",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3.4,
+			"position": [224, 304]
+		},
+		{
+			"parameters": {
+				"jsCode": "const channelIdsInput = $json.channelIds ?? [];\nconst feedUrlsInput = $json.feedUrls ?? [];\n\nconst channelIds = Array.isArray(channelIdsInput)\n  ? channelIdsInput\n  : String(channelIdsInput)\n      .split(',')\n      .map((id) => id.trim())\n      .filter(Boolean);\n\nconst feedUrls = Array.isArray(feedUrlsInput)\n  ? feedUrlsInput\n  : String(feedUrlsInput)\n      .split(',')\n      .map((url) => url.trim())\n      .filter(Boolean);\n\nconst items = [];\n\nfor (const url of feedUrls) {\n  items.push({ feedUrl: url, channelId: null });\n}\n\nfor (const channelId of channelIds) {\n  items.push({\n    feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,\n    channelId,\n  });\n}\n\nreturn items.map((item) => ({ json: item }));"
+			},
+			"id": "5df5edc7-2f87-4d07-9f26-7eb90391b3fe",
+			"name": "Prepare Feeds",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [448, 304]
+		},
+		{
+			"parameters": {
+				"url": "={{ $json.feedUrl }}",
+				"options": {}
+			},
+			"id": "8a9b835d-fd1a-4bd6-95bb-0127f3b70f7c",
+			"name": "Read YouTube Feed",
+			"type": "n8n-nodes-base.rssFeedRead",
+			"typeVersion": 1.2,
+			"position": [672, 304]
+		},
+		{
+			"parameters": {
+				"jsCode": "function getVideoId(item) {\n  const link = item.json.link ?? '';\n  const linkMatch = String(link).match(/v=([^&]+)/);\n  if (linkMatch) return linkMatch[1];\n\n  const guid = item.json.guid ?? item.json.id ?? '';\n  const guidMatch = String(guid).match(/yt:video:([^:]+)/);\n  if (guidMatch) return guidMatch[1];\n\n  return String(guid || link);\n}\n\nfunction getChannelKey(item) {\n  return (\n    item.json['yt:channelId'] ??\n    item.json.channelId ??\n    item.json.channel_id ??\n    'default'\n  );\n}\n\nconst items = $input.all();\nif (items.length === 0) return items;\n\nconst staticData = this.getWorkflowStaticData('node');\nstaticData.lastVideoIds = staticData.lastVideoIds ?? {};\n\nconst grouped = new Map();\nfor (const item of items) {\n  const channelKey = String(getChannelKey(item));\n  item.json.channelKey = channelKey;\n  if (!grouped.has(channelKey)) grouped.set(channelKey, []);\n  grouped.get(channelKey).push(item);\n}\n\nconst output = [];\nfor (const [channelKey, groupItems] of grouped.entries()) {\n  const sorted = [...groupItems].sort((a, b) => {\n    const left = new Date(a.json.isoDate ?? a.json.pubDate ?? 0).getTime();\n    const right = new Date(b.json.isoDate ?? b.json.pubDate ?? 0).getTime();\n    return right - left;\n  });\n\n  const lastSeenId = staticData.lastVideoIds[channelKey];\n\n  if (!lastSeenId) {\n    const newest = sorted[0];\n    staticData.lastVideoIds[channelKey] = getVideoId(newest);\n    output.push(newest);\n    continue;\n  }\n\n  const newItems = [];\n  for (const item of sorted) {\n    const videoId = getVideoId(item);\n    if (videoId === lastSeenId) break;\n    newItems.push(item);\n  }\n\n  if (newItems.length > 0) {\n    staticData.lastVideoIds[channelKey] = getVideoId(sorted[0]);\n  }\n\n  output.push(...newItems);\n}\n\nreturn output;"
+			},
+			"id": "778ec4dc-1ca6-4cb7-a8f6-5eb1d3f43011",
+			"name": "Filter New Videos",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [896, 304]
+		},
+		{
+			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "49d1c57b-7994-4c46-88f0-9f16a9c541d3",
+							"name": "youtubeUrl",
+							"value": "={{ $json.link }}",
+							"type": "string"
+						},
+						{
+							"id": "2a2b0f8b-c1b2-4d3e-b3a2-4a4a94f2f642",
+							"name": "channelKey",
+							"value": "={{ $json.channelKey ?? $json['yt:channelId'] ?? '' }}",
+							"type": "string"
+						}
+					]
+				},
+				"includeOtherFields": true,
+				"options": {}
+			},
+			"id": "5d7f790b-14b2-4e1e-b2e0-3f16bbd0c53c",
+			"name": "Prepare Summary Request",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3.4,
+			"position": [1120, 304]
+		},
+		{
+			"parameters": {
+				"workflowId": {
+					"__rl": true,
+					"value": "cvavyY2aDVxbokQw",
+					"mode": "list",
+					"cachedResultName": "YouTube Summary (Docker)"
+				},
+				"workflowInputs": {
+					"mappingMode": "defineBelow",
+					"value": {
+						"youtubeUrl": "={{ $json.youtubeUrl }}",
+						"override": false
+					},
+					"matchingColumns": [],
+					"schema": [],
+					"attemptToConvertTypes": false,
+					"convertFieldsToString": true
+				},
+				"options": {
+					"waitForSubWorkflow": true
+				}
+			},
+			"id": "8d1d06cb-1c73-46df-bf44-7d46a1b8c7d1",
+			"name": "Run YouTube Summary Workflow",
+			"type": "n8n-nodes-base.executeWorkflow",
+			"typeVersion": 1.3,
+			"position": [1344, 304]
+		}
+	],
+	"pinData": {},
+	"connections": {
+		"Schedule Trigger": {
+			"main": [
+				[
+					{
+						"node": "Workflow Configuration",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Workflow Configuration": {
+			"main": [
+				[
+					{
+						"node": "Prepare Feeds",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Prepare Feeds": {
+			"main": [
+				[
+					{
+						"node": "Read YouTube Feed",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Read YouTube Feed": {
+			"main": [
+				[
+					{
+						"node": "Filter New Videos",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Filter New Videos": {
+			"main": [
+				[
+					{
+						"node": "Prepare Summary Request",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Prepare Summary Request": {
+			"main": [
+				[
+					{
+						"node": "Run YouTube Summary Workflow",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"active": true,
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"versionId": "7c39a0d0-5f6f-48d1-a3c0-139adf0df0fe",
+	"meta": {
+		"instanceId": "41176f47a3812a9830e85384100cd687d08b3219ae44f8aa4fda17449ed060f5"
+	},
+	"id": "youtube-channel-new-video-summary",
+	"tags": []
+}

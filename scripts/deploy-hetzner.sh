@@ -6,7 +6,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-/opt/n8n/docker-compose.yml}"
 COMPOSE_SERVICE="${COMPOSE_SERVICE:-n8n}"
 RESTART_METHOD="${RESTART_METHOD:-pull}"
 WORKFLOW_IMPORT_ENABLED="${WORKFLOW_IMPORT_ENABLED:-false}"
-WORKFLOW_IMPORT_LIST="${WORKFLOW_IMPORT_LIST:-}"
+WORKFLOW_IMPORT_LIST="${WORKFLOW_IMPORT_LIST:-__ALL__}"
 WORKFLOW_IMPORT_REACTIVATE="${WORKFLOW_IMPORT_REACTIVATE:-true}"
 WORKFLOW_IMPORT_API_URL="${WORKFLOW_IMPORT_API_URL:-}"
 WORKFLOW_IMPORT_API_KEY="${WORKFLOW_IMPORT_API_KEY:-}"
@@ -26,18 +26,26 @@ else
 fi
 
 if [[ "${WORKFLOW_IMPORT_ENABLED}" == "true" ]]; then
-  if [[ -z "${WORKFLOW_IMPORT_LIST}" ]]; then
-    echo "WORKFLOW_IMPORT_ENABLED=true but WORKFLOW_IMPORT_LIST is empty. Skipping workflow import."
-    exit 0
-  fi
-
   container_id="$(docker compose -f "${COMPOSE_FILE}" ps -q "${COMPOSE_SERVICE}")"
   if [[ -z "${container_id}" ]]; then
     echo "Could not find running container for service ${COMPOSE_SERVICE}" >&2
     exit 1
   fi
 
-  IFS=',' read -r -a workflow_paths <<< "${WORKFLOW_IMPORT_LIST}"
+  if [[ "${WORKFLOW_IMPORT_LIST}" == "__ALL__" ]]; then
+    workflow_paths=()
+    for workflow_path in "${REPO_DIR}"/deployment/hetzner/*.json; do
+      if [[ -f "${workflow_path}" ]]; then
+        workflow_paths+=("${workflow_path#${REPO_DIR}/}")
+      fi
+    done
+  else
+    if [[ -z "${WORKFLOW_IMPORT_LIST}" ]]; then
+      echo "WORKFLOW_IMPORT_ENABLED=true but WORKFLOW_IMPORT_LIST is empty. Skipping workflow import."
+      exit 0
+    fi
+    IFS=',' read -r -a workflow_paths <<< "${WORKFLOW_IMPORT_LIST}"
+  fi
   index=0
 
   for workflow_path in "${workflow_paths[@]}"; do
