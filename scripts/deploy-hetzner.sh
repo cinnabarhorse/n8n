@@ -10,6 +10,7 @@ WORKFLOW_IMPORT_LIST="${WORKFLOW_IMPORT_LIST:-__ALL__}"
 WORKFLOW_IMPORT_REACTIVATE="${WORKFLOW_IMPORT_REACTIVATE:-true}"
 WORKFLOW_IMPORT_API_URL="${WORKFLOW_IMPORT_API_URL:-}"
 WORKFLOW_IMPORT_API_KEY="${WORKFLOW_IMPORT_API_KEY:-}"
+WORKFLOW_IMPORT_API_PATH="${WORKFLOW_IMPORT_API_PATH:-api/v1}"
 
 if [[ ! -f "${COMPOSE_FILE}" ]]; then
   echo "Compose file not found: ${COMPOSE_FILE}" >&2
@@ -88,8 +89,10 @@ if [[ "${WORKFLOW_IMPORT_ENABLED}" == "true" ]]; then
 
       docker compose -f "${COMPOSE_FILE}" exec -T "${COMPOSE_SERVICE}" node -e "
         const apiUrl = new URL('${WORKFLOW_IMPORT_API_URL}');
+        if (!apiUrl.pathname.endsWith('/')) apiUrl.pathname += '/';
+        const apiPath = '${WORKFLOW_IMPORT_API_PATH}'.replace(/^\/+/, '').replace(/\/+$/, '');
         const workflowId = '${workflow_id}';
-        fetch(new URL('/api/v1/workflows/' + workflowId + '/activate', apiUrl), {
+        fetch(new URL(apiPath + '/workflows/' + workflowId + '/activate', apiUrl), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
